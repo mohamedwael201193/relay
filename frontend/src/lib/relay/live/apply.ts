@@ -19,6 +19,7 @@ export function streakFromHistory(laps: HistoryLap[]): { current: number; best: 
   let best = 0;
   for (const lap of laps) {
     if (lap.state === "SETTLED_VOID") continue;
+    if (lap.state === "FILLED" || lap.state === "ORDER_SUBMITTED" || lap.state === "PARTIAL_FILL") continue;
     if (lap.state === "SETTLED_WIN") {
       run += 1;
       if (run > best) best = run;
@@ -214,8 +215,7 @@ export function lapsFromHistory(history: HistoryLap[], proof: ProofBundle | null
     const settle = settlements.find((s) => s.lap_index === h.lap_index);
     const verified = fillIsVerified(order?.fill_class);
     if (!verified || !order) return [];
-    const outcome = historyOutcome(h, settle);
-    if (!outcome) return [];
+    const outcome = historyOutcome(h, settle) ?? "OPEN";
     const price = order.price ? Number(order.price) / 1e6 : 0;
     const qty = order.quantity ? Number(order.quantity) / 1e6 : 0;
     const filledQty = order.filled ? Number(order.filled) / 1e6 : 0;

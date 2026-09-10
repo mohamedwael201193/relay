@@ -41,12 +41,14 @@ const OUTCOME_LABEL: Record<LapOutcome, string> = {
   WIN: "WIN",
   LOSS: "LOSS",
   VOID: "VOID",
+  OPEN: "FILL",
 };
 
 const OUTCOME_TONE: Record<LapOutcome, "lime" | "ember" | "foam"> = {
   WIN: "lime",
   LOSS: "ember",
   VOID: "foam",
+  OPEN: "lime",
 };
 
 export function OutcomeStrip({ ticks, ariaSummary, className }: Props) {

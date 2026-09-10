@@ -21,7 +21,7 @@ export type Side = "UP" | "DOWN";
 export type Outcome = "UP" | "DOWN" | "VOID";
 
 /** Result of a lap from the runner's perspective. */
-export type LapOutcome = "WIN" | "LOSS" | "VOID";
+export type LapOutcome = "WIN" | "LOSS" | "VOID" | "OPEN";
 
 export type RunnerStatus =
   | "DEPLOYING"

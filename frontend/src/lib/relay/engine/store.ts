@@ -65,7 +65,8 @@ export const useRelay = create<RelayStore>((set, get) => ({
       return;
     }
     if (parts[0] === "app") {
-      const screen = (parts[1] as AppScreen) || "home";
+      const raw = parts[1] || "home";
+      const screen = (raw === "tape" ? "history" : raw === "alerts" ? "notifications" : raw) as AppScreen;
       set({ view: "app", screen });
     }
   },

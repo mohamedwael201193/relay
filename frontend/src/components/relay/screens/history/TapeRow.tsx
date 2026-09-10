@@ -148,8 +148,10 @@ function LapReceipt({ lap }: { lap: Lap }) {
               </div>
               <div className="mt-1.5">
                 <ProofCheck label="FILL" hash={lap.proof.fillTx} />
-                <ProofCheck label="SETTLEMENT" hash={lap.proof.settlementTx} />
-                <ProofCheck label={lap.outcome === "VOID" ? "REFUND" : "CLAIM"} hash={lap.proof.claimTx} />
+                {lap.proof.settlementTx ? <ProofCheck label="SETTLEMENT" hash={lap.proof.settlementTx} /> : null}
+                {lap.proof.claimTx ? (
+                  <ProofCheck label={lap.outcome === "VOID" ? "REFUND" : "CLAIM"} hash={lap.proof.claimTx} />
+                ) : null}
               </div>
             </div>
           </div>

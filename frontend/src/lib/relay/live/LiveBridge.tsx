@@ -10,6 +10,7 @@ import {
   erc20Abi,
   formatEther,
   formatUnits,
+  getAddress,
   http,
   parseUnits,
   type Address,
@@ -37,6 +38,7 @@ type EthereumProvider = { request: (args: { method: string; params?: unknown[] }
 type ConnectedWallet = {
   address: string;
   chainId?: string | number;
+  walletClientType?: string;
   switchChain: (chainId: number) => Promise<void>;
   getEthereumProvider: () => Promise<EthereumProvider>;
 };
@@ -120,7 +122,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     relayApi.markets().catch(() => ({ rows: [] })),
     relayApi.arena().catch(() => ({ runners: [] })),
   ]);
-  const row =
+  let row =
     live && "vault" in live
       ? { ...mine, ...live, vault: live.vault, state: live.state, last_market_id: live.lastMarketId, last_error: live.lastError, lap_index: live.lapIndex }
       : mine;
@@ -131,18 +133,28 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
   const marketsRows = markets && "rows" in markets ? markets.rows : [];
   const historyLaps = history && "laps" in history ? history.laps : [];
   let vaultBal = 0;
+  let onchainKilled = false;
   try {
     const pc = await publicFor(net);
-    const bal = await pc.readContract({
-      address: net.collateral as Address,
-      abi: erc20Abi,
-      functionName: "balanceOf",
-      args: [vault as Address],
-    });
+    const [bal, killed] = await Promise.all([
+      pc.readContract({
+        address: net.collateral as Address,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [vault as Address],
+      }),
+      pc.readContract({
+        address: vault as Address,
+        abi: vaultWriteAbi,
+        functionName: "killed",
+      }),
+    ]);
     vaultBal = Number(formatUnits(bal, net.decimals));
+    onchainKilled = Boolean(killed);
   } catch {
     vaultBal = useRelay.getState().bankroll;
   }
+  if (onchainKilled) row = { ...row, state: "KILLED" };
   const streak = streakFromHistory(historyLaps);
   useRelay.setState({
     vaultAddress: vault,
@@ -192,13 +204,29 @@ export function LiveBridge() {
       const wallet = pickConnectedWallet(ctx.current.wallets, ctx.current.owner);
       const injected = (window as unknown as { ethereum?: EthereumProvider }).ethereum;
       if (!wallet && !injected) throw new Error("Connect a wallet first");
-      if (wallet?.chainId && !String(wallet.chainId).includes(String(SHANNON_CHAIN_ID))) {
+      const embedded = wallet?.walletClientType === "privy";
+      const wanted = (wallet?.address ?? ctx.current.owner)?.toLowerCase();
+      if (wallet && !embedded && wallet.chainId && !String(wallet.chainId).includes(String(SHANNON_CHAIN_ID))) {
         await wallet.switchChain(SHANNON_CHAIN_ID).catch(() => undefined);
       }
-      const provider = injected ?? (await wallet!.getEthereumProvider());
-      const authorized = (await provider.request({ method: "eth_requestAccounts" })) as string[];
-      const account = (authorized[0] ?? wallet?.address ?? ctx.current.owner) as Address;
-      if (!account) throw new Error("Connect a wallet first");
+      const provider = embedded
+        ? await wallet!.getEthereumProvider()
+        : (injected ?? (await wallet!.getEthereumProvider()));
+      let account: Address | undefined;
+      if (embedded) {
+        account = wallet!.address as Address;
+        await wallet!.switchChain(SHANNON_CHAIN_ID).catch(() => undefined);
+      } else {
+        let accounts = ((await provider.request({ method: "eth_accounts" })) as string[]) ?? [];
+        if (wanted && !accounts.some((a) => a.toLowerCase() === wanted)) {
+          accounts = ((await provider.request({ method: "eth_requestAccounts" })) as string[]) ?? [];
+        }
+        const match = wanted
+          ? accounts.find((a) => a.toLowerCase() === wanted)
+          : accounts[0];
+        if (!match) throw new Error("Switch the connected wallet to the active address");
+        account = getAddress(match);
+      }
       const walletClient = createWalletClient({
         account,
         chain: somniaShannon,
@@ -333,36 +361,53 @@ export function LiveBridge() {
         await refreshRunner(net, owner, vault);
       },
       kill: async () => {
-        const net = await relayApi.network();
-        const { walletClient, publicClient, owner } = await clients(net);
-        const vault = useRelay.getState().vaultAddress;
-        if (!vault) return;
-        await send(walletClient, publicClient, {
-          to: vault as Address,
-          data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "kill" }),
-        });
-        const auth = await signAction("stop", vault, owner, walletClient);
-        await relayApi.stop(vault, auth).catch(() => undefined);
-        await refreshRunner(net, owner, vault);
+        try {
+          const net = await relayApi.network();
+          const { walletClient, publicClient, owner } = await clients(net);
+          const vault = useRelay.getState().vaultAddress;
+          if (!vault) return;
+          await send(walletClient, publicClient, {
+            to: vault as Address,
+            data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "kill" }),
+          });
+          try {
+            const auth = await signAction("stop", vault, owner, walletClient);
+            await relayApi.stop(vault, auth);
+          } catch {
+            /* on-chain kill is enough; worker reconciles KILLED */
+          }
+          await refreshRunner(net, owner, vault);
+        } catch (e) {
+          phase("Failed", "failed");
+          reportApiError((e as Error).message);
+        }
       },
       withdraw: async () => {
-        const net = await relayApi.network();
-        const { walletClient, publicClient, owner } = await clients(net);
-        const vault = useRelay.getState().vaultAddress;
-        if (!vault) return;
-        const bal = await publicClient.readContract({
-          address: net.collateral as Address,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [vault as Address],
-        });
-        if (bal === 0n) return;
-        await send(walletClient, publicClient, {
-          to: vault as Address,
-          data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "withdraw", args: [bal] }),
-        });
-        await readWalletBalances(net, owner);
-        await refreshRunner(net, owner, vault);
+        try {
+          const net = await relayApi.network();
+          const { walletClient, publicClient, owner } = await clients(net);
+          const vault = useRelay.getState().vaultAddress;
+          if (!vault) return;
+          if (net.opsVault && vault.toLowerCase() === net.opsVault.toLowerCase()) {
+            throw new Error("Refusing to withdraw the ops vault from this session");
+          }
+          const bal = await publicClient.readContract({
+            address: net.collateral as Address,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [vault as Address],
+          });
+          if (bal === 0n) return;
+          await send(walletClient, publicClient, {
+            to: vault as Address,
+            data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "withdraw", args: [bal] }),
+          });
+          await readWalletBalances(net, owner);
+          await refreshRunner(net, owner, vault);
+        } catch (e) {
+          phase("Failed", "failed");
+          reportApiError((e as Error).message);
+        }
       },
     });
     return () => registerLiveHandlers(null);

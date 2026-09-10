@@ -1,7 +1,8 @@
 /** RELAY — display formatters (financial numbers are sacred; never wing them). */
 
 export function money(v: number, opts?: { sign?: boolean; decimals?: number }) {
-  const d = opts?.decimals ?? 2;
+  const abs0 = Math.abs(v);
+  const d = opts?.decimals ?? (abs0 > 0 && abs0 < 0.01 ? 6 : 2);
   const abs = Math.abs(v).toLocaleString("en-US", {
     minimumFractionDigits: d,
     maximumFractionDigits: d,
@@ -86,7 +87,9 @@ export function shortHash(h: string) {
 }
 
 export function contracts(n: number) {
-  return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const abs = Math.abs(n);
+  const digits = abs > 0 && abs < 0.01 ? 6 : abs > 0 && abs < 1 ? 4 : 2;
+  return n.toLocaleString("en-US", { maximumFractionDigits: digits });
 }
 
 export function price(p: number, asset: string) {

@@ -56,6 +56,11 @@ const OUTCOME_META: Record<
     cls: "bg-panel2 text-foam border-lined",
     icon: <Minus className="h-3 w-3" strokeWidth={3.5} aria-hidden />,
   },
+  OPEN: {
+    label: "FILL",
+    cls: "bg-lime/15 text-lime border-limedeep/50",
+    icon: <Check className="h-3 w-3" strokeWidth={3.5} aria-hidden />,
+  },
 };
 
 export function OutcomeChip({ outcome, shielded }: { outcome: LapOutcome; shielded: boolean }) {

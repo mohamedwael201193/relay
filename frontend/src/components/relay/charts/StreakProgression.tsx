@@ -41,6 +41,7 @@ const OUTCOME_TONE: Record<LapOutcome, "lime" | "ember" | "foam"> = {
   WIN: "lime",
   LOSS: "ember",
   VOID: "foam",
+  OPEN: "lime",
 };
 
 export function StreakProgression({ steps, best, ariaSummary, className }: Props) {
