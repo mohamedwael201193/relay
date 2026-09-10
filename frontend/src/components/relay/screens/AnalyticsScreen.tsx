@@ -42,7 +42,8 @@ export function AnalyticsScreen() {
     const wins = asc.filter((l) => l.outcome === "WIN").length;
     const losses = asc.filter((l) => l.outcome === "LOSS").length;
     const voids = asc.filter((l) => l.outcome === "VOID").length;
-    return { wins, losses, voids, decided: wins + losses };
+    const open = asc.filter((l) => l.outcome === "OPEN").length;
+    return { wins, losses, voids, open, decided: wins + losses };
   }, [asc]);
 
   const bankrollPoints = useMemo<BankrollPoint[]>(() => {
@@ -178,7 +179,7 @@ export function AnalyticsScreen() {
               bankroll
             )} over ${asc.length} laps — ${counts.wins} wins, ${counts.losses} losses, ${
               counts.voids
-            } void.`}
+            } void, ${counts.open} open.`}
           />
 
           <OutcomeStrip
@@ -189,9 +190,9 @@ export function AnalyticsScreen() {
               pnl: l.pnl,
               streakAfter: l.streakAfter,
             }))}
-            ariaSummary={`Lap tape: ${counts.wins} wins, ${counts.losses} losses and ${
+            ariaSummary={`Lap tape: ${counts.wins} wins, ${counts.losses} losses, ${
               counts.voids
-            } void across ${asc.length} laps, best streak ×${bestStreak}.`}
+            } void and ${counts.open} open across ${asc.length} laps, best streak ×${bestStreak}.`}
           />
 
           <WinRateDonut

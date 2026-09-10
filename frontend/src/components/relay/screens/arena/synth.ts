@@ -179,14 +179,15 @@ export function synthTicks(a: ArenaRunner, count = 18): Tick[] {
   return ticks;
 }
 
-/** Real ticks from the user's settled laps (oldest → newest). */
+/** Real ticks from the user's settled laps (oldest → newest). Unsettled OPEN fills are not decided. */
 export function ticksFromLaps(
-  laps: { outcome: "WIN" | "LOSS" | "VOID" }[],
+  laps: { outcome: "WIN" | "LOSS" | "VOID" | "OPEN" }[],
   count = 18
 ): Tick[] {
-  return laps.slice(-count).map((l) =>
-    l.outcome === "WIN" ? "W" : l.outcome === "LOSS" ? "L" : "V"
-  );
+  return laps
+    .filter((l) => l.outcome !== "OPEN")
+    .slice(-count)
+    .map((l) => (l.outcome === "WIN" ? "W" : l.outcome === "LOSS" ? "L" : "V"));
 }
 
 /** Longest consecutive win run and where it starts. */

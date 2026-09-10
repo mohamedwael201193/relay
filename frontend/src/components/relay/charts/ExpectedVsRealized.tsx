@@ -33,7 +33,7 @@ export function ExpectedVsRealized({ expected, realized, laps, ariaSummary, clas
       className={className}
       legend={
         <span className="data text-[0.62rem] text-foam/60">
-          model edge is a demo placeholder — the tape is real
+          model edge is a stand-in — fills and receipts are Shannon
         </span>
       }
     >

@@ -81,7 +81,13 @@ export function HistoryScreen() {
         ? laps
         : filter === "SHIELDED"
           ? laps.filter((l) => l.shielded)
-          : laps.filter((l) => l.outcome === filter);
+          : laps.filter((l) =>
+              filter === "WINS"
+                ? l.outcome === "WIN"
+                : filter === "LOSSES"
+                  ? l.outcome === "LOSS"
+                  : l.outcome === "VOID",
+            );
     const byAsset =
       asset === "BOTH" ? byOutcome : byOutcome.filter((l) => l.market.asset === asset);
     return [...byAsset].sort((a, b) => b.number - a.number); // newest first

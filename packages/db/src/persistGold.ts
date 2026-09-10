@@ -19,6 +19,8 @@ type OrderAttempt = {
 
 type OrderEvidence = {
   vault: string;
+  asset?: string;
+  intervalSec?: string;
   postOnly: OrderAttempt | null;
   ioc: OrderAttempt | null;
 };
@@ -56,6 +58,8 @@ export async function persistShannonGold(): Promise<{ runnerId: string }> {
     pool: attempt.pool ?? null,
     correlationId: attempt.correlationId,
     state: "REDEEMED",
+    asset: order.asset ?? null,
+    intervalSec: order.intervalSec ?? null,
     order: {
       attemptId: attempt.correlationId,
       txHash: attempt.placeTx,
@@ -109,6 +113,8 @@ export async function persistGoldE2e(evidence?: GoldE2eEvidence): Promise<{ runn
       pool: a1.pool ?? null,
       correlationId: a1.correlationId,
       state: ev.settlement.redeemed ? "REDEEMED" : "WAITING_SETTLEMENT",
+      asset: lap1?.asset ?? null,
+      intervalSec: lap1?.intervalSec ?? null,
       order: {
         attemptId: a1.correlationId,
         txHash: a1.placeTx,
@@ -138,6 +144,8 @@ export async function persistGoldE2e(evidence?: GoldE2eEvidence): Promise<{ runn
       pool: a2.pool ?? null,
       correlationId: a2.correlationId,
       state: a2.fillClass === "FILL" || a2.fillClass === "PARTIAL_FILL" ? "FILLED" : "ORDER_SUBMITTED",
+      asset: lap2?.asset ?? null,
+      intervalSec: lap2?.intervalSec ?? null,
       order: {
         attemptId: a2.correlationId,
         txHash: a2.placeTx,

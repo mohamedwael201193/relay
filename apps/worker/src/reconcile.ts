@@ -139,6 +139,8 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       pool: attempt.pool,
       correlationId: attempt.correlationId,
       state: filled ? "FILLED" : attempt.placedEvent ? "ORDER_SUBMITTED" : "DISCOVERING",
+      asset: placed.asset ?? null,
+      intervalSec: placed.intervalSec ?? null,
       order: {
         attemptId: attempt.correlationId,
         txHash: attempt.placeTx,

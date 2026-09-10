@@ -145,6 +145,8 @@ export type HistoryLap = {
   state: string;
   correlation_id: string | null;
   created_at: string;
+  asset?: string | null;
+  interval_sec?: string | null;
 };
 
 export type ProofBundle = {

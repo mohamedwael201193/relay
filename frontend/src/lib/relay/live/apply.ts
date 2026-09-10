@@ -1,4 +1,4 @@
-import type { ArenaRunner, Lap, LapPhase, LiveLap, MarketWindow, Runner } from "../types";
+import type { ArenaRunner, AssetId, Lap, LapPhase, LiveLap, MarketWindow, Runner, WindowCadence } from "../types";
 import { fillIsVerified, mapBackendState } from "../mapping";
 import type { ArenaRow, HistoryLap, LiveMarketRow, ProofBundle, RunnerRow } from "../api/client";
 
@@ -76,28 +76,57 @@ export function arenaFromRows(rows: ArenaRow[], myVault: string | null): ArenaRu
   });
 }
 
+export function cadenceFromInterval(intervalSec?: string | null): WindowCadence {
+  if (intervalSec === "3600") return "1h";
+  if (intervalSec === "300") return "5m";
+  if (intervalSec === "60") return "1m";
+  return "15m";
+}
+
+/** Shannon binary YES is UP. The worker always arms BUY_YES. */
+export function sideFromKind(kind?: string | number | null): "UP" | "DOWN" {
+  const k = String(kind ?? "").toUpperCase();
+  if (k === "BUY_NO" || k === "NO" || k === "DOWN") return "DOWN";
+  return "UP";
+}
+
+export function assetFromMarket(
+  marketId: string | null | undefined,
+  source: { asset?: string | null } | null | undefined,
+  markets: LiveMarketRow[] = [],
+): AssetId {
+  const tagged = source?.asset?.toUpperCase();
+  if (tagged === "ETH" || tagged === "BTC") return tagged;
+  const id = (marketId ?? "").toLowerCase();
+  const row = markets.find((m) => m.marketId.toLowerCase() === id);
+  const live = row?.asset?.toUpperCase();
+  if (live === "ETH" || live === "BTC") return live;
+  return "BTC";
+}
+
+function windowFromMarketRow(r: LiveMarketRow, now: number): MarketWindow {
+  const expiryMs = r.expiry ? Number(r.expiry) * 1000 : now + 60_000;
+  const asset = assetFromMarket(r.marketId, r, []);
+  return {
+    id: r.marketId,
+    marketId: r.marketId,
+    asset,
+    label: `${asset} Up or Down`,
+    cadence: cadenceFromInterval(r.intervalSec ?? null),
+    openPrice: 0,
+    opensAt: now,
+    closesAt: Number.isFinite(expiryMs) ? expiryMs : now + 60_000,
+    venue: "DreamDEX · Event Contracts",
+    collateral: "tUSDC" as const,
+    live: r.onchainStatus === "Trading",
+  };
+}
+
 export function calendarFromMarkets(rows: LiveMarketRow[], now: number): MarketWindow[] {
   return rows
     .filter((r) => r.onchainStatus === "Trading" || r.onchainStatus === "Locked")
     .slice(0, 6)
-    .map((r, i) => {
-      const expiryMs = r.expiry ? Number(r.expiry) * 1000 : now + 60_000;
-      const cadence = r.intervalSec === "3600" ? "1h" : r.intervalSec === "300" ? "5m" : r.intervalSec === "60" ? "1m" : "15m";
-      const asset = r.asset === "ETH" ? "ETH" : "BTC";
-      return {
-        id: r.marketId,
-        marketId: r.marketId,
-        asset,
-        label: `${asset} Up or Down`,
-        cadence,
-        openPrice: 0,
-        opensAt: now,
-        closesAt: Number.isFinite(expiryMs) ? expiryMs : now + 60_000,
-        venue: "DreamDEX · Event Contracts",
-        collateral: "tUSDC" as const,
-        live: r.onchainStatus === "Trading",
-      };
-    });
+    .map((r) => windowFromMarketRow(r, now));
 }
 
 export function liveLapFromState(opts: {
@@ -109,8 +138,11 @@ export function liveLapFromState(opts: {
   const mapped = mapBackendState(opts.row.state);
   if (!mapped.phase) return null;
   const cal = calendarFromMarkets(opts.markets, opts.now);
+  const lastId = (opts.row.last_market_id ?? "").toLowerCase();
+  const raw = opts.markets.find((m) => m.marketId.toLowerCase() === lastId);
   const market =
-    cal.find((m) => m.marketId.toLowerCase() === (opts.row.last_market_id ?? "").toLowerCase()) ?? cal[0];
+    cal.find((m) => m.marketId.toLowerCase() === lastId) ??
+    (raw ? windowFromMarketRow(raw, opts.now) : cal[0]);
   if (!market) {
     return null;
   }
@@ -207,7 +239,11 @@ function historyOutcome(h: HistoryLap, settle: ProofBundle["settlements"][number
   return null;
 }
 
-export function lapsFromHistory(history: HistoryLap[], proof: ProofBundle | null): Lap[] {
+export function lapsFromHistory(
+  history: HistoryLap[],
+  proof: ProofBundle | null,
+  markets: LiveMarketRow[] = [],
+): Lap[] {
   const orders = proof?.orders ?? [];
   const settlements = proof?.settlements ?? [];
   return history.flatMap((h) => {
@@ -221,19 +257,22 @@ export function lapsFromHistory(history: HistoryLap[], proof: ProofBundle | null
     const filledQty = order.filled ? Number(order.filled) / 1e6 : 0;
     const placedAt = Date.parse(h.created_at) || 0;
     const tx = { hash: order.tx_hash, block: 0, at: placedAt };
+    const asset = assetFromMarket(h.market_id, h, markets);
+    const side = sideFromKind(null);
+    const cadence = cadenceFromInterval(h.interval_sec ?? markets.find((m) => m.marketId.toLowerCase() === h.market_id.toLowerCase())?.intervalSec);
     return [{
       number: h.lap_index,
       market: {
-        asset: "BTC",
-        label: "Event contract",
+        asset,
+        label: `${asset} Up or Down`,
         marketId: h.market_id,
         windowStart: placedAt,
         windowEnd: placedAt,
         openPrice: 0,
         closePrice: 0,
-        cadence: "1m",
+        cadence,
       },
-      side: "UP" as const,
+      side,
       stake: price * qty,
       entryPrice: price,
       outcome,
@@ -245,7 +284,7 @@ export function lapsFromHistory(history: HistoryLap[], proof: ProofBundle | null
       order: {
         id: `ord-${h.lap_index}`,
         kind: "IOC",
-        side: "UP",
+        side,
         price,
         quantity: qty,
         stake: price * qty,

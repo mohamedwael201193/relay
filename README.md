@@ -11,7 +11,7 @@ Shannon testnet contracts are deployed and a real fill + redeem path has been ex
 - App: [https://relay-silk-one.vercel.app](https://relay-silk-one.vercel.app)
 - API + worker: [https://relay-api-71gi.onrender.com/health](https://relay-api-71gi.onrender.com/health)
 
-Somnia Shannon only (`chainId` 50312). MetaMask may show a first-visit site warning on the Vercel host — that is the wallet, not a drain. Do not enable `MAINNET_TRADING_ENABLED`. A killed runner cannot be re-deposited; RELAY creates a new vault instead.
+Somnia Shannon only (`chainId` 50312). MetaMask may show a first-visit site warning on the Vercel host — that is the wallet, not a drain. Do not enable `MAINNET_TRADING_ENABLED`. A killed runner cannot be re-deposited; RELAY creates a new vault instead. Tape rows use the Shannon market asset (BTC or ETH), not a hardcoded BTC label.
 
 Pinned protocol packages:
 

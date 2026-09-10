@@ -121,7 +121,7 @@ export async function getRunnerByVault(vault: string): Promise<RunnerRow | null>
 export async function listLaps(runnerId: string) {
   return withPool(async (c) => {
     const r = await c.query(
-      `SELECT id, lap_index, market_id, pool, state, correlation_id, created_at
+      `SELECT id, lap_index, market_id, pool, state, correlation_id, created_at, asset, interval_sec
        FROM laps WHERE runner_id = $1 ORDER BY lap_index ASC`,
       [runnerId],
     );
@@ -160,6 +160,8 @@ export async function persistWorkerStep(input: {
   pool?: string | null;
   correlationId: string;
   state: string;
+  asset?: string | null;
+  intervalSec?: string | null;
   order?: {
     attemptId: string;
     txHash: string;
@@ -180,12 +182,26 @@ export async function persistWorkerStep(input: {
 }): Promise<void> {
   await withPool(async (c) => {
     const lap = await c.query<{ id: string }>(
-      `INSERT INTO laps (runner_id, lap_index, market_id, pool, state, correlation_id)
-       VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO laps (runner_id, lap_index, market_id, pool, state, correlation_id, asset, interval_sec)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        ON CONFLICT (runner_id, lap_index)
-       DO UPDATE SET market_id = EXCLUDED.market_id, state = EXCLUDED.state, correlation_id = EXCLUDED.correlation_id
+       DO UPDATE SET
+         market_id = EXCLUDED.market_id,
+         state = EXCLUDED.state,
+         correlation_id = EXCLUDED.correlation_id,
+         asset = COALESCE(EXCLUDED.asset, laps.asset),
+         interval_sec = COALESCE(EXCLUDED.interval_sec, laps.interval_sec)
        RETURNING id`,
-      [input.runnerId, input.lapIndex, input.marketId, input.pool ?? null, input.state, input.correlationId],
+      [
+        input.runnerId,
+        input.lapIndex,
+        input.marketId,
+        input.pool ?? null,
+        input.state,
+        input.correlationId,
+        input.asset ?? null,
+        input.intervalSec ?? null,
+      ],
     );
     const lapId = lap.rows[0].id;
     if (input.order) {
@@ -230,7 +246,12 @@ export async function persistWorkerStep(input: {
         input.order ? "order" : input.settlement ? "settlement" : "state",
         input.order?.txHash ?? input.settlement?.redeemTx ?? null,
         input.order?.fillClass ?? null,
-        JSON.stringify({ state: input.state, marketId: input.marketId }),
+        JSON.stringify({
+          state: input.state,
+          marketId: input.marketId,
+          asset: input.asset ?? null,
+          intervalSec: input.intervalSec ?? null,
+        }),
       ],
     );
   });

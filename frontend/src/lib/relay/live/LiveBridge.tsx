@@ -182,7 +182,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     runner: runnerFromRow(row, useRelay.getState().runner?.name ?? "Runner", cfg),
     liveLap: liveLapFromState({ row, markets: marketsRows, proof: proofBundle, now }),
     calendar: calendarFromMarkets(marketsRows, now),
-    laps: lapsFromHistory(historyLaps, proofBundle),
+    laps: lapsFromHistory(historyLaps, proofBundle, marketsRows),
     arena: arenaFromRows(arena.runners ?? [], vault),
     bankroll: vaultBal,
     startBankroll: Math.max(useRelay.getState().startBankroll, vaultBal),
