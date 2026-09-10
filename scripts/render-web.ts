@@ -19,5 +19,6 @@ if (process.env.RELAY_RUN_WORKER === "false") {
     process.exit(1);
   }
   await migrate();
+  console.log(JSON.stringify({ ts: new Date().toISOString(), event: "boot_reconcile", note: "first tick runs immediately on process start/restart" }));
   await runWorkerLoop(privateKeyToAccount(key), { once: false });
 }

@@ -6,6 +6,8 @@ import {
   runLiveOrder,
   settleFilledMarket,
   protocolChecksFailed,
+  shortestPath,
+  type RunnerState,
 } from "@relay/core";
 import {
   claimRunner,
@@ -43,9 +45,20 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     return { action: "no_lease" };
   }
 
+  const claimed = runner;
+  let state = claimed.state as RunnerState;
+  async function go(to: RunnerState, extra?: Parameters<typeof setRunnerState>[2]): Promise<void> {
+    const hops = shortestPath(state, to);
+    for (let i = 0; i < hops.length; i++) {
+      const hop = hops[i];
+      await setRunnerState(claimed.id, hop, i === hops.length - 1 ? extra : {});
+      state = hop;
+    }
+  }
+
   try {
     if (snap.killed) {
-      await setRunnerState(runner.id, "KILLED", { lastError: "vault killed on-chain" });
+      await go("KILLED", { lastError: "vault killed on-chain" });
       log("killed", { vault: dep.vault, runnerId: runner.id });
       return { action: "killed", runnerId: runner.id };
     }
@@ -62,16 +75,16 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       !(lastSettle && lastSettle.market_id === lastOrder.market_id);
 
     if (needsSettle && lastOrder) {
-      await setRunnerState(runner.id, "WAITING_SETTLEMENT", { lastMarketId: lastOrder.market_id });
+      await go("WAITING_SETTLEMENT", { lastMarketId: lastOrder.market_id });
       const settlement = await settleFilledMarket(account, lastOrder.market_id as Hex);
-      const nextState = settlement.voided
+      const nextState: RunnerState = settlement.voided
         ? "SETTLED_VOID"
         : settlement.outcome === "loss"
           ? "SETTLED_LOSS"
           : settlement.redeemed
             ? "REDEEMED"
             : settlement.settled
-              ? "REDEEMED"
+              ? "SETTLED_WIN"
               : "WAITING_SETTLEMENT";
       await persistWorkerStep({
         runnerId: runner.id,
@@ -87,9 +100,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
           redeemTx: settlement.redeemTx,
         },
       });
-      await setRunnerState(runner.id, nextState, {
-        lastMarketId: lastOrder.market_id,
-      });
+      await go(nextState, { lastMarketId: lastOrder.market_id });
       log("settled", {
         runnerId: runner.id,
         marketId: lastOrder.market_id,
@@ -101,7 +112,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       return { action: settlement.settled ? "settled" : "settlement_pending", runnerId: runner.id };
     }
 
-    await setRunnerState(runner.id, "DISCOVERING");
+    await go("DISCOVERING");
     const skip = lastOrder?.market_id ? [lastOrder.market_id] : [];
     const placed = await runLiveOrder(account, {
       intervalSec: "60",
@@ -112,7 +123,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     });
     const attempt = placed.ioc ?? placed.postOnly;
     if (!attempt) {
-      await setRunnerState(runner.id, "ERROR", { lastError: "no attempt" });
+      await go("ERROR", { lastError: "no attempt" });
       return { action: "no_attempt", runnerId: runner.id };
     }
     const filled = attempt.fillClass === "FILL" || attempt.fillClass === "PARTIAL_FILL";
@@ -137,7 +148,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
         receiptStatus: attempt.placeStatus,
       },
     });
-    await setRunnerState(runner.id, filled ? "FILLED" : "ORDER_SUBMITTED", {
+    await go(filled ? "FILLED" : "ORDER_SUBMITTED", {
       lastMarketId: attempt.marketId,
       bumpLap: true,
     });
@@ -151,7 +162,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     return { action: filled ? "filled" : "placed", runnerId: runner.id };
   } catch (e) {
     const msg = (e as Error).message;
-    await setRunnerState(runner.id, "ERROR", { lastError: msg.slice(0, 500) });
+    await go("ERROR", { lastError: msg.slice(0, 500) });
     log("error", { runnerId: runner.id, error: msg });
     throw e;
   } finally {

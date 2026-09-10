@@ -20,8 +20,16 @@ export {
 export { runLiveOrder, runLiveOrderFromKey } from "./execute.js";
 export { discoverLiveMarket, normalizeExpireNs, intervalMatches } from "./discover.js";
 export { assertShannonExecution, mainnetTradingEnabled, protocolChecksFailed } from "./gates.js";
+export {
+  pickOwner,
+  billingRequired,
+  webDeploySucceeded,
+  shouldCreateBackgroundWorker,
+  type RenderOwner,
+  type EnsureResult,
+} from "./renderDeploy.js";
 export { runReactivityProbe } from "./reactivityProbe.js";
 export { runGoldE2e } from "./goldE2e.js";
 export { settleFilledMarket, settleFilledMarketFromKey } from "./settle.js";
 export { classifyFill, snapQuantity } from "./quant.js";
-export { canTransition, assertTransition, RUNNER_STATES, type RunnerState } from "./state.js";
+export { canTransition, assertTransition, shortestPath, RUNNER_STATES, type RunnerState } from "./state.js";

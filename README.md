@@ -8,6 +8,8 @@ This repository is **backend, contracts, workers, and proof**. The frontend is b
 
 Shannon testnet contracts are deployed and a real fill + redeem path has been executed. This is **not** mainnet-ready. Secrets in any chat or local `.env` must be rotated before production.
 
+Live Render web (API + worker in one Free process, `pnpm start`): [https://relay-api-71gi.onrender.com/health](https://relay-api-71gi.onrender.com/health). Do not enable `MAINNET_TRADING_ENABLED`.
+
 Pinned protocol packages:
 
 - `@somnia-chain/markets-sdk@0.29.0`
@@ -67,6 +69,8 @@ pnpm gold:e2e          # fill → wait → settle/redeem → autonomous lap 2
 pnpm db:migrate        # Postgres schema (pooler DATABASE_URL / DIRECT_URL for DDL)
 pnpm api               # health + runner/proof/network API
 pnpm worker            # single-writer agent with SKIP LOCKED restart reconcile
+pnpm start             # API + worker (Render web process)
+pnpm render:deploy     # create Free web service via Render API (worker optional)
 pnpm test
 pnpm typecheck
 forge test

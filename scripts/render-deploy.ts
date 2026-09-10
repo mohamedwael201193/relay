@@ -1,10 +1,19 @@
-import { loadEnv, writeEvidence } from "@relay/core";
+import {
+  billingRequired,
+  loadEnv,
+  pickOwner,
+  shouldCreateBackgroundWorker,
+  webDeploySucceeded,
+  writeEvidence,
+  type EnsureResult,
+  type RenderOwner,
+} from "@relay/core";
 
 loadEnv();
 
 const API = "https://api.render.com/v1";
 
-type OwnerWrap = { owner?: { id?: string; name?: string; email?: string }; id?: string; name?: string };
+type OwnerWrap = { owner?: RenderOwner; id?: string; name?: string; type?: string };
 
 async function renderFetch(path: string, init?: RequestInit): Promise<{ status: number; body: unknown }> {
   const key = process.env.RENDER_API_KEY?.trim();
@@ -51,22 +60,29 @@ function createError(body: unknown): string {
   return "create failed";
 }
 
+function ownersFrom(body: unknown): RenderOwner[] {
+  if (!Array.isArray(body)) return [];
+  return (body as OwnerWrap[])
+    .map((row) => row.owner ?? { id: row.id ?? "", name: row.name, type: row.type })
+    .filter((o) => o.id);
+}
+
 async function main() {
   const owners = await renderFetch("/owners");
-  const list = Array.isArray(owners.body) ? (owners.body as OwnerWrap[]) : [];
-  const ownerId =
-    list[0]?.owner?.id ??
-    list[0]?.id ??
-    (owners.body as { id?: string } | null)?.id;
-  if (owners.status >= 400 || !ownerId) {
+  const list = ownersFrom(owners.body);
+  const preferred = pickOwner(list, process.env.RENDER_OWNER_NAME);
+  if (owners.status >= 400 || !preferred?.id) {
     writeEvidence("shannon-render-deploy.json", {
       ok: false,
       ownersStatus: owners.status,
+      ownerCount: list.length,
       note: "owners lookup failed (key not logged)",
     });
-    console.log(JSON.stringify({ ok: false, ownersStatus: owners.status }));
+    console.log(JSON.stringify({ ok: false, ownersStatus: owners.status, ownerCount: list.length }));
     process.exit(1);
   }
+
+  const ownerOrder = [preferred, ...list.filter((o) => o.id !== preferred.id)];
 
   const existing = await renderFetch("/services?limit=50");
   const services = Array.isArray(existing.body)
@@ -82,24 +98,25 @@ async function main() {
   const repo = "https://github.com/mohamedwael201193/relay";
   const branch = process.env.RENDER_BRANCH?.trim() || "feat/shannon-execution";
   const envVars = [
-    ...envList([
-      "DATABASE_URL",
-      "DIRECT_URL",
-      "DEPLOYER_PRIVATE_KEY",
-      "OPERATOR_PRIVATE_KEY",
-      "SOMNIA_SHANNON_RPC_URL",
-      "SOMNIA_SHANNON_WS_URL",
-      "SOMNIA_MAINNET_RPC_URL",
-      "SHANNON_INDEXER_URL",
-      "MAINNET_INDEXER_URL",
-    ]),
+    ...envList(["DATABASE_URL", "DIRECT_URL", "DEPLOYER_PRIVATE_KEY", "OPERATOR_PRIVATE_KEY"]),
+    { key: "SOMNIA_SHANNON_RPC_URL", value: process.env.SOMNIA_SHANNON_RPC_URL?.trim() || "https://dream-rpc.somnia.network" },
+    { key: "SOMNIA_SHANNON_WS_URL", value: process.env.SOMNIA_SHANNON_WS_URL?.trim() || "wss://api.infra.testnet.somnia.network/ws" },
+    { key: "SOMNIA_MAINNET_RPC_URL", value: process.env.SOMNIA_MAINNET_RPC_URL?.trim() || "https://api.infra.mainnet.somnia.network" },
+    { key: "SHANNON_INDEXER_URL", value: process.env.SHANNON_INDEXER_URL?.trim() || "https://dev.smk.somnia.host/v1/graphql" },
+    { key: "MAINNET_INDEXER_URL", value: process.env.MAINNET_INDEXER_URL?.trim() || "https://prd.smk.somnia.host/v1/graphql" },
     { key: "RELAY_NETWORK", value: "shannon" },
     { key: "MAINNET_TRADING_ENABLED", value: "false" },
     { key: "RELAY_RUN_WORKER", value: "true" },
     { key: "NODE_VERSION", value: "20" },
   ];
 
-  async function ensure(name: string, type: "web_service" | "background_worker", startCommand: string, healthCheckPath?: string) {
+  async function ensure(
+    ownerId: string,
+    name: string,
+    type: "web_service" | "background_worker",
+    startCommand: string,
+    healthCheckPath?: string,
+  ): Promise<EnsureResult> {
     const already = names.get(name) as { id?: string; serviceDetails?: { url?: string } } | undefined;
     if (already?.id) {
       return { name, id: already.id, created: false, url: already.serviceDetails?.url ?? null };
@@ -114,7 +131,8 @@ async function main() {
       envVars,
       serviceDetails: {
         runtime: "node",
-        plan: "free",
+        plan: type === "background_worker" ? "starter" : "free",
+        region: "oregon",
         envSpecificDetails: {
           buildCommand: "pnpm install --frozen-lockfile --prod=false",
           startCommand,
@@ -138,22 +156,38 @@ async function main() {
     };
   }
 
-  const api = await ensure("relay-api", "web_service", "pnpm start", "/health");
-  const worker = await ensure("relay-worker", "background_worker", "pnpm worker");
+  let owner = preferred;
+  let api: EnsureResult = { name: "relay-api", id: null };
+  for (const candidate of ownerOrder) {
+    owner = candidate;
+    api = await ensure(candidate.id, "relay-api", "web_service", "pnpm start", "/health");
+    if (webDeploySucceeded(api) || !billingRequired(api.httpStatus ?? 0, api.error)) break;
+  }
+  const worker = shouldCreateBackgroundWorker()
+    ? await ensure(owner.id, "relay-worker", "background_worker", "pnpm worker")
+    : {
+        name: "relay-worker",
+        id: null,
+        created: false,
+        error: "skipped: combined pnpm start on web; set RENDER_CREATE_WORKER=true for a paid worker",
+      };
 
+  const ok = webDeploySucceeded(api);
   const evidence = {
-    ok: Boolean(api.id && worker.id),
-    ownerId,
+    ok,
+    ownerId: owner.id,
+    ownerName: owner.name ?? null,
     repo,
     branch,
     envVarNames: envVars.map((e) => e.key),
     api,
     worker,
-    note: "values of secrets are not written; Render restart re-runs the worker which reconciles from Postgres + chain",
+    billingRequired: billingRequired(api.httpStatus ?? 0, api.error),
+    note: "secret values are not written; Render restart runs boot_reconcile then SKIP LOCKED worker ticks",
   };
   writeEvidence("shannon-render-deploy.json", evidence);
   console.log(JSON.stringify(evidence));
-  process.exit(evidence.ok ? 0 : 1);
+  process.exit(ok ? 0 : 1);
 }
 
 await main();
