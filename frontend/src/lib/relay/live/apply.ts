@@ -186,7 +186,9 @@ export function liveLapFromState(opts: {
 }
 
 function labelForState(state: string, verifiedFill: boolean): string {
-  if (state === "ORDER_SUBMITTED" && !verifiedFill) return "ORDER ACCEPTED · WAITING FOR FILL";
+  if ((state === "ORDER_SUBMITTED" || state === "FILLED") && !verifiedFill) {
+    return "ORDER ACCEPTED · WAITING FOR FILL";
+  }
   if (state === "FILLED") return "FILLED";
   if (state === "PARTIAL_FILL") return "PARTIAL FILL";
   if (state === "DISCOVERING") return "DISCOVERING";

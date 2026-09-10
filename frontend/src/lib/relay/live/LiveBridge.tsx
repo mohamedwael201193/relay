@@ -248,35 +248,44 @@ export function LiveBridge() {
           const cfg = useRelay.getState().draftConfig;
           const listed = await relayApi.runnersByOwner(owner);
           let vault = listed.runners.find((r) => r.state !== "KILLED")?.vault;
+          const unit = parseUnits(String(cfg.budget), net.decimals);
+          const stop = parseUnits(String(cfg.stopLoss), net.decimals);
           if (!vault) {
             const auth = await signAction("provision", "new", owner, walletClient);
             const created = await relayApi.provision({ ...auth, budget: cfg.budget, stopLoss: cfg.stopLoss });
             vault = created.vault;
           }
-          const unit = parseUnits(String(cfg.budget), net.decimals);
-          const stop = parseUnits(String(cfg.stopLoss), net.decimals);
-          if (net.operator) {
+          const vaultBal = await publicClient.readContract({
+            address: net.collateral as Address,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [vault as Address],
+          });
+          const needsFund = vaultBal === 0n;
+          if (needsFund) {
+            if (net.operator) {
+              await send(walletClient, publicClient, {
+                to: vault as Address,
+                data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "setOperatorNow", args: [net.operator as Address] }),
+              });
+            }
             await send(walletClient, publicClient, {
               to: vault as Address,
-              data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "setOperatorNow", args: [net.operator as Address] }),
+              data: encodeFunctionData({
+                abi: vaultWriteAbi,
+                functionName: "setCaps",
+                args: [unit, unit, stop, unit],
+              }),
+            });
+            await send(walletClient, publicClient, {
+              to: net.collateral as Address,
+              data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [vault as Address, unit] }),
+            });
+            await send(walletClient, publicClient, {
+              to: vault as Address,
+              data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "deposit", args: [unit] }),
             });
           }
-          await send(walletClient, publicClient, {
-            to: vault as Address,
-            data: encodeFunctionData({
-              abi: vaultWriteAbi,
-              functionName: "setCaps",
-              args: [unit, unit, stop, unit],
-            }),
-          });
-          await send(walletClient, publicClient, {
-            to: net.collateral as Address,
-            data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [vault as Address, unit] }),
-          });
-          await send(walletClient, publicClient, {
-            to: vault as Address,
-            data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "deposit", args: [unit] }),
-          });
           const authStart = await signAction("start", vault, owner, walletClient);
           await relayApi.start(vault, authStart);
           useRelay.setState({ vaultAddress: vault, startBankroll: cfg.budget });
