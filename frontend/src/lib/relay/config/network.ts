@@ -55,7 +55,7 @@ export function explorerTxUrl(hash: string | undefined | null): string | null {
 export function publicEnv() {
   return {
     apiUrl: (process.env.NEXT_PUBLIC_RELAY_API_URL ?? "https://relay-api-71gi.onrender.com").replace(/\/$/, ""),
-    privyAppId: process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "",
+    privyAppId: process.env.NEXT_PUBLIC_PRIVY_APP_ID || "cmtuwy7ib00d30cjpkl8dzpqk",
     network: process.env.NEXT_PUBLIC_NETWORK ?? "shannon",
     chainId: Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? SHANNON_CHAIN_ID),
   };
