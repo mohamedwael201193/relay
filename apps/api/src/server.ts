@@ -10,6 +10,7 @@ import {
   SHANNON_ADDRESSES,
   SHANNON_CHAIN_ID,
   aggregateArena,
+  derivedPnlRaw,
   deployOwnedVault,
   loadEnv,
   loadShannonDeployment,
@@ -102,6 +103,11 @@ function parseAssets(body: Record<string, unknown>): string[] {
   return ["BTC", "ETH"];
 }
 
+function parseBoostOf(raw: unknown): string | null {
+  const s = String(raw ?? "").trim().toLowerCase();
+  return /^0x[0-9a-f]{40}$/.test(s) ? s : null;
+}
+
 async function requireOwner(
   action: OwnerAction,
   vault: string,
@@ -178,7 +184,8 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
       if (url.pathname === "/v1/arena") {
         const joinRows = await withPool(async (c) => {
           const r = await c.query(
-            `SELECT r.vault, r.owner, r.state, l.state AS lap_state, l.pnl, l.created_at
+            `SELECT r.vault, r.owner, r.state, r.bias, r.interval_sec, r.assets,
+                    l.state AS lap_state, l.pnl, l.entry_cost, l.redeem_value, l.created_at
              FROM runners r
              LEFT JOIN laps l ON l.runner_id = r.id
              ORDER BY r.vault, l.lap_index ASC NULLS LAST`,
@@ -187,13 +194,30 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
             vault: string;
             owner: string;
             state: string;
+            bias: string | null;
+            interval_sec: string | null;
+            assets: string[] | null;
             lap_state: string | null;
             pnl: string | null;
+            entry_cost: string | null;
+            redeem_value: string | null;
             created_at: string | null;
           }>;
         });
         json(res, 200, {
-          runners: aggregateArena(joinRows),
+          runners: aggregateArena(
+            joinRows.map((row) => ({
+              vault: row.vault,
+              owner: row.owner,
+              state: row.state,
+              lap_state: row.lap_state,
+              pnl: derivedPnlRaw(row.pnl, row.entry_cost, row.redeem_value),
+              created_at: row.created_at,
+              bias: row.bias,
+              interval_sec: row.interval_sec,
+              assets: row.assets,
+            })),
+          ),
           note: "win_rate = wins/(wins+losses); voids and open excluded; pnl is verified tape; no synthetic followers",
         });
         return;
@@ -252,10 +276,22 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
           json(res, auth.status, { error: auth.error });
           return;
         }
+        const boostOf = parseBoostOf(body.boostOf);
+        if (boostOf) {
+          const leader = await getRunnerByVault(boostOf);
+          if (!leader) {
+            json(res, 404, { error: "boost_leader_not_found" });
+            return;
+          }
+          if (sameAddr(leader.owner, auth.owner)) {
+            json(res, 400, { error: "boost_self" });
+            return;
+          }
+        }
         const existing = (await listRunnersByOwner(auth.owner)).filter(
           (r) => r.state !== "KILLED" && r.state !== "STOPPED",
         );
-        if (existing[0]) {
+        if (!boostOf && existing[0]) {
           json(res, 409, { error: "runner_exists", runner: existing[0] });
           return;
         }
@@ -278,10 +314,15 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
           owner: auth.owner,
           operator: "0x0000000000000000000000000000000000000000",
         });
+        const leader = boostOf ? await getRunnerByVault(boostOf) : null;
         const policy = await updateRunnerPolicy(row.id, {
-          bias: parseBias(body.bias),
-          intervalSec: parseCadence(body),
-          assets: parseAssets(body),
+          bias: parseBias(body.bias ?? leader?.bias),
+          intervalSec: parseCadence({
+            ...body,
+            cadence: body.cadence ?? leader?.interval_sec,
+            intervalSec: body.intervalSec ?? leader?.interval_sec,
+          }),
+          assets: parseAssets(body.assets != null ? body : { assets: leader?.assets }),
         });
         json(res, 200, { runner: policy, deployTx: created.tx, vault: created.vault });
         return;
@@ -333,7 +374,14 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
           return;
         }
         if (tail === "history") {
-          json(res, 200, { runner: row, laps: await listLaps(row.id) });
+          const laps = await listLaps(row.id);
+          json(res, 200, {
+            runner: row,
+            laps: laps.map((lap) => ({
+              ...lap,
+              pnl: derivedPnlRaw(lap.pnl, lap.entry_cost, lap.redeem_value),
+            })),
+          });
           return;
         }
         if (tail === "proof") {

@@ -62,5 +62,7 @@ describe("aggregateArena", () => {
     expect(rows[2].vault).toBe("0xc");
     expect(rows[2].win_rate).toBeNull();
     expect(rows[2].verified_laps).toBe(0);
+    expect(rows[0].bias).toBe("FOLLOW");
+    expect(rows[0].interval_sec).toBe("60");
   });
 });

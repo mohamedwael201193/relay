@@ -1,6 +1,7 @@
 import {
   assertShannonExecution,
   collateralCostForKind,
+  filledOrderNeedsSettle,
   policyStakeRaw,
   readVaultSnapshot,
   runDoctor,
@@ -89,7 +90,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     return { action: "no_lease" };
   }
   const vault = claimed.vault as Address;
-  const snap = await readVaultSnapshot(vault);
+  let snap = await readVaultSnapshot(vault);
   await ensureRunner({
     vault,
     owner: snap.owner,
@@ -129,25 +130,41 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
           kind?: string;
         }
       | undefined;
-    const lastSettle = proof.settlements.at(-1) as { market_id: string; redeem_tx: string | null } | undefined;
+    const lastSettle = proof.settlements.at(-1) as
+      | { market_id: string; redeem_tx: string | null; resolved?: boolean; voided?: boolean }
+      | undefined;
 
-    const needsSettle =
-      lastOrder &&
-      (lastOrder.fill_class === "FILL" || lastOrder.fill_class === "PARTIAL_FILL") &&
-      !(lastSettle && lastSettle.market_id === lastOrder.market_id);
+    const needsSettle = filledOrderNeedsSettle(lastOrder, lastSettle);
 
     if (needsSettle && lastOrder) {
       await go("WAITING_SETTLEMENT", { lastMarketId: lastOrder.market_id });
       const settlement = await settleFilledMarket(account, lastOrder.market_id as Hex, { vault });
+      if (!settlement.settled) {
+        await persistWorkerStep({
+          runnerId: runner.id,
+          vault,
+          lapIndex: lastOrder.lap_index,
+          marketId: lastOrder.market_id,
+          correlationId: `settle-wait:${lastOrder.tx_hash}`,
+          state: "WAITING_SETTLEMENT",
+        });
+        log("settlement_pending", { runnerId: runner.id, marketId: lastOrder.market_id });
+        return { action: "settlement_pending", runnerId: runner.id };
+      }
       const nextState: RunnerState = settlement.voided
         ? "SETTLED_VOID"
         : settlement.outcome === "loss"
           ? "SETTLED_LOSS"
           : settlement.redeemed
             ? "REDEEMED"
-            : settlement.settled
-              ? "SETTLED_WIN"
-              : "WAITING_SETTLEMENT";
+            : "SETTLED_WIN";
+      const entryCost =
+        lastOrder.price && lastOrder.filled
+          ? entryCostRaw(lastOrder.kind, lastOrder.price, lastOrder.filled)
+          : null;
+      const redeemValue = (
+        BigInt(settlement.vaultCollateralAfter) - BigInt(settlement.vaultCollateralBefore)
+      ).toString();
       await persistWorkerStep({
         runnerId: runner.id,
         vault,
@@ -155,19 +172,11 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
         marketId: lastOrder.market_id,
         correlationId: `settle:${lastOrder.tx_hash}`,
         state: nextState,
-        entryCost: lastOrder.price && lastOrder.filled
-          ? entryCostRaw(lastOrder.kind, lastOrder.price, lastOrder.filled)
-          : null,
-        redeemValue: (
-          BigInt(settlement.vaultCollateralAfter) - BigInt(settlement.vaultCollateralBefore)
-        ).toString(),
+        entryCost,
+        redeemValue,
         pnl:
-          lastOrder.price && lastOrder.filled
-            ? (
-                BigInt(settlement.vaultCollateralAfter) -
-                BigInt(settlement.vaultCollateralBefore) -
-                BigInt(entryCostRaw(lastOrder.kind, lastOrder.price, lastOrder.filled))
-              ).toString()
+          entryCost != null
+            ? (BigInt(redeemValue) - BigInt(entryCost)).toString()
             : null,
         settlement: {
           resolved: settlement.resolved,
@@ -185,7 +194,11 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
         redeemed: settlement.redeemed,
         redeemTx: settlement.redeemTx,
       });
-      return { action: settlement.settled ? "settled" : "settlement_pending", runnerId: runner.id };
+      snap = await readVaultSnapshot(vault);
+      if (snap.killed) {
+        await go("KILLED", { lastError: "vault killed on-chain" });
+        return { action: "killed", runnerId: runner.id };
+      }
     }
 
     await go("DISCOVERING");

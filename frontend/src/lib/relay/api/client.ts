@@ -99,6 +99,7 @@ export const relayApi = {
     bias?: string;
     cadence?: string;
     assets?: string[];
+    boostOf?: string;
   }) =>
     request<{ runner: RunnerRow; deployTx: string; vault: string }>("/v1/runners/provision", {
       method: "POST",
@@ -151,6 +152,9 @@ export type ArenaRow = {
   pnl_7d_raw?: string | number | null;
   streak?: string | number;
   best_streak?: string | number;
+  bias?: string | null;
+  interval_sec?: string | null;
+  assets?: string[] | null;
 };
 
 export type HistoryLap = {

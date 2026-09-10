@@ -47,6 +47,17 @@ export function runnerFromRow(row: RunnerRow, draftName: string, config: Runner[
   };
 }
 
+function biasFromRow(raw: string | null | undefined): "UP" | "DOWN" | "FOLLOW" {
+  const s = String(raw ?? "").trim().toUpperCase();
+  if (s === "UP" || s === "DOWN" || s === "FOLLOW") return s;
+  return "FOLLOW";
+}
+
+function assetsFromRow(raw: string[] | null | undefined): AssetId[] {
+  const list = (raw ?? []).map((a) => String(a).toUpperCase()).filter((a): a is AssetId => a === "BTC" || a === "ETH");
+  return list.length ? list : ["BTC", "ETH"];
+}
+
 export function arenaFromRows(rows: ArenaRow[], myVault: string | null): ArenaRunner[] {
   return rows.map((r, i) => {
     const laps = Number(r.verified_laps) || 0;
@@ -56,13 +67,19 @@ export function arenaFromRows(rows: ArenaRow[], myVault: string | null): ArenaRu
     const closed = laps > 0;
     const pnlLife = closed && r.pnl_raw != null && r.pnl_raw !== "" ? Number(r.pnl_raw) / 1e6 : Number.NaN;
     const pnl7 = closed && r.pnl_7d_raw != null && r.pnl_7d_raw !== "" ? Number(r.pnl_7d_raw) / 1e6 : pnlLife;
+    const bias = biasFromRow(r.bias);
+    const cadence = cadenceFromInterval(r.interval_sec);
+    const assets = assetsFromRow(r.assets);
     return {
       rank: i + 1,
       runnerId: r.vault,
       name: shortHandle(r.vault),
       ownerHandle: shortHandle(r.owner),
-      strategy: "Shannon runner",
-      bias: "FOLLOW",
+      strategy:
+        bias === "FOLLOW"
+          ? "Follow the Book · post-only → IOC"
+          : `Momentum · ${bias} · post-only → IOC`,
+      bias,
       streak: Number(r.streak) || 0,
       bestStreak: Number(r.best_streak) || 0,
       pnl7d: pnl7,
@@ -78,6 +95,8 @@ export function arenaFromRows(rows: ArenaRow[], myVault: string | null): ArenaRu
       glyph: glyphFrom(r.vault),
       spark: [],
       ownerAddress: r.owner,
+      cadence,
+      assets,
     };
   });
 }
@@ -89,7 +108,7 @@ export function cadenceFromInterval(intervalSec?: string | null): WindowCadence 
   return "15m";
 }
 
-/** Shannon binary YES is UP. The worker always arms BUY_YES. */
+/** Shannon binary YES is UP. BUY_NO is DOWN. */
 export function sideFromKind(kind?: string | number | null): "UP" | "DOWN" {
   const k = String(kind ?? "").toUpperCase();
   if (k === "BUY_NO" || k === "NO" || k === "DOWN") return "DOWN";

@@ -128,6 +128,9 @@ export type ArenaAggInput = {
   lap_state: string | null;
   pnl: string | null;
   created_at?: string | null;
+  bias?: string | null;
+  interval_sec?: string | null;
+  assets?: string[] | null;
 };
 
 export type ArenaAggRow = {
@@ -145,6 +148,9 @@ export type ArenaAggRow = {
   pnl_7d_raw: string;
   streak: number;
   best_streak: number;
+  bias: string;
+  interval_sec: string;
+  assets: string[];
 };
 
 /** Fold join rows (one per lap, or a runner with no laps) into arena public stats. */
@@ -195,6 +201,9 @@ export function aggregateArena(rows: ArenaAggInput[]): ArenaAggRow[] {
       pnl_7d_raw: hasPnl ? pnl7d.toString() : "",
       streak: streak.current,
       best_streak: streak.best,
+      bias: head.bias && head.bias !== "" ? head.bias : "FOLLOW",
+      interval_sec: head.interval_sec && head.interval_sec !== "" ? head.interval_sec : "60",
+      assets: Array.isArray(head.assets) && head.assets.length ? head.assets : ["BTC", "ETH"],
     });
   }
   out.sort((a, b) => {

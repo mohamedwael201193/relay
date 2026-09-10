@@ -33,6 +33,11 @@ export { runReactivityProbe } from "./reactivityProbe.js";
 export { runGoldE2e } from "./goldE2e.js";
 export { settleFilledMarket, settleFilledMarketFromKey } from "./settle.js";
 export {
+  filledOrderNeedsSettle,
+  settlementIsFinal,
+  derivedPnlRaw,
+} from "./settleGate.js";
+export {
   classifyFill,
   snapQuantity,
   collateralCost,

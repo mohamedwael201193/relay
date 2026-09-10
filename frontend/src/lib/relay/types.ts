@@ -322,6 +322,8 @@ export interface ArenaRunner {
   spark: number[]; // 12-point bankroll spark
   /** On-chain owner; omitted only when unknown. Never synthesize. */
   ownerAddress?: string;
+  cadence?: WindowCadence;
+  assets?: AssetId[];
 }
 
 export interface RunnerGlyph {

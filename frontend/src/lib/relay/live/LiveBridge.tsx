@@ -364,7 +364,8 @@ export function LiveBridge() {
               }
             }),
           );
-          let vault = selectDeployVault(listed.runners, killedOnChain);
+          const intent = useRelay.getState().boostIntent;
+          let vault = intent ? null : selectDeployVault(listed.runners, killedOnChain);
           const unit = parseUnits(String(cfg.budget), net.decimals);
           const stop = parseUnits(String(cfg.stopLoss), net.decimals);
           if (!vault) {
@@ -377,6 +378,7 @@ export function LiveBridge() {
               bias: cfg.bias,
               cadence: cfg.cadence,
               assets: cfg.assets,
+              boostOf: intent?.leaderVault,
             });
             vault = created.vault;
           }
@@ -437,12 +439,13 @@ export function LiveBridge() {
           }
           const authStart = await signAction("start", vault, owner, walletClient);
           await relayApi.start(vault, authStart);
-          useRelay.setState({ vaultAddress: vault, startBankroll: cfg.budget });
+          useRelay.setState({ vaultAddress: vault, startBankroll: cfg.budget, boostIntent: null });
           await readWalletBalances(net, owner);
           await refreshRunner(net, owner, vault);
           useRelay.getState().go("app", "live");
         } catch (e) {
           phase("Failed", "failed");
+          useRelay.setState({ boostIntent: null });
           reportApiError((e as Error).message);
         }
       },

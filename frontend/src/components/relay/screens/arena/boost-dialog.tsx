@@ -2,8 +2,9 @@
 
 /**
  * RELAY — boost dialog.
- * Boost is not implemented on-chain (no BoostController). The chrome
- * stays; the CTA is honest: independent vaults only, not a live mirror.
+ * Boost deploys an independent RunnerVault owned by you, cloning the
+ * leader's bias / cadence / assets. Your tUSDC, RELAY operator — never
+ * the leader's wallet.
  */
 
 import { useState } from "react";
@@ -33,9 +34,11 @@ export function BoostDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const wallet = useRelay((s) => s.wallet);
+  const boostRunner = useRelay((s) => s.boostRunner);
   const [amount, setAmount] = useState(25);
 
   const insufficient = wallet.tUSDC < amount;
+  const self = !!entry.isYou;
 
   const handleOpenChange = (o: boolean) => {
     onOpenChange(o);
@@ -49,8 +52,9 @@ export function BoostDialog({
             Boost {entry.name}
           </DialogTitle>
           <DialogDescription className="text-foam">
-            Boost would deploy an independent vault for you — not a live
-            mirror of this runner. There is no BoostController on-chain.
+            Deploys your own vault with this runner&apos;s {entry.bias} bias
+            {entry.cadence ? ` · ${entry.cadence}` : ""}. You fund it. RELAY
+            operates it. Not their wallet.
           </DialogDescription>
         </DialogHeader>
 
@@ -82,22 +86,28 @@ export function BoostDialog({
 
         {insufficient && (
           <p className="text-xs font-semibold text-ember" role="alert">
-            Insufficient tUSDC — visit Settings → faucet (demo)
+            Insufficient tUSDC
           </p>
         )}
 
-        <p className="text-xs leading-relaxed text-foam">
-          BOOST IS NOT LIVE — independent vaults only. Use Deploy to start your own runner.
-        </p>
+        {self && (
+          <p className="text-xs leading-relaxed text-foam">
+            You already own this runner.
+          </p>
+        )}
 
         <button
           type="button"
-          disabled
+          disabled={insufficient || self}
+          onClick={() => {
+            boostRunner(entry.runnerId, amount);
+            onOpenChange(false);
+          }}
           className={cn(
             "flex w-full items-center justify-center gap-2 rounded-xl border-2 border-lime bg-lime px-4 py-3.5",
             "font-black wide text-base text-graphite hardshadow-d",
-            "cursor-not-allowed opacity-50",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime"
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime",
+            insufficient || self ? "cursor-not-allowed opacity-50" : "hover:-translate-y-0.5"
           )}
         >
           <FlameMark className="h-5 w-5" aria-hidden />

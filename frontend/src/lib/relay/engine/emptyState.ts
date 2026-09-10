@@ -69,5 +69,6 @@ export function emptyLiveState(): Omit<
     backendState: null,
     apiError: null,
     txPhase: null,
+    boostIntent: null,
   };
 }

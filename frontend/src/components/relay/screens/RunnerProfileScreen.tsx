@@ -229,7 +229,7 @@ function AthleteCard({ entry }: { entry: ArenaRunner }) {
       <div className="mt-3 flex items-center gap-2.5 rounded-xl border-2 border-lined bg-panel2/60 px-4 py-2.5">
         <BatonGlyph className="h-4 w-auto" aria-hidden />
         <span className="mlabel text-foam">
-          BOOST NOT LIVE — 0 INDEPENDENT VAULTS MIRRORED FROM THIS TAPE
+          BOOST DEPLOYS YOUR VAULT — CLONES BIAS, NOT THEIR FUNDS
         </span>
       </div>
 
@@ -595,7 +595,7 @@ function RiskPolicy({ entry }: { entry: ArenaRunner }) {
       {!isYou && (
         <div className="border-t-2 border-lined px-5 py-4">
           <div className="mlabel text-foam/60">
-            BOOST WOULD DEPLOY YOUR OWN VAULT — NOT LIVE
+            BOOST DEPLOYS YOUR OWN VAULT WITH THIS BIAS
           </div>
         </div>
       )}

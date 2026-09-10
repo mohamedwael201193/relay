@@ -103,8 +103,19 @@ export const useRelay = create<RelayStore>((set, get) => ({
     void getLiveHandlers()?.withdraw();
   },
 
-  boostRunner: () => {
-    /* production has no synthetic boost accounting */
+  boostRunner: (runnerId, amount) => {
+    const entry = get().arena.find((a) => a.runnerId.toLowerCase() === runnerId.toLowerCase());
+    if (!entry || entry.isYou) return;
+    get().setDraftConfig({
+      bias: entry.bias,
+      cadence: entry.cadence ?? get().draftConfig.cadence,
+      assets: entry.assets && entry.assets.length ? entry.assets : get().draftConfig.assets,
+      budget: amount,
+      stopLoss: Math.min(amount, get().draftConfig.stopLoss),
+    });
+    set({ boostIntent: { leaderVault: runnerId } });
+    void get().deployDraftAsync();
+    get().goScreen("live");
   },
   toggleFollow: (runnerId) => {
     const s = get();
