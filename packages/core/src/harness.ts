@@ -64,61 +64,71 @@ export async function runShannonHarness(limit = 5): Promise<{
     BTC: btcCandles.map((c) => ({ t: c.bucketStart * 1000, p: c.close })),
     ETH: ethCandles.map((c) => ({ t: c.bucketStart * 1000, p: c.close })),
   };
-  const rows: HarnessRow[] = [];
-
-  for (const m of slice) {
-    if (!m.marketId || !m.poolAddress) continue;
-    const onchain = await getMarketOnchainHttp(
-      sh,
-      SHANNON_ADDRESSES.binaryModule as Address,
-      m.marketId,
-    );
-    const book = await getBinaryBookParamsHttp(sh, onchain.pool);
-    let fees: unknown = null;
-    try {
-      fees = await exchange.client.getMarketFees(m.marketId);
-    } catch {
-      fees = { error: "getMarketFees failed" };
-    }
-    let bookLevels: { bids: number; asks: number } | null = null;
-    try {
-      const ob = await exchange.client.getBinaryOrderBook(m.poolAddress);
-      bookLevels = {
-        bids: ob.yesBids?.length ?? 0,
-        asks: ob.yesAsks?.length ?? 0,
-      };
-    } catch {
-      bookLevels = null;
-    }
-    const id = m.marketId.toLowerCase();
-    const asset = (m.asset ?? "").toUpperCase() === "ETH" ? "ETH" : "BTC";
-    rows.push({
-      marketId: m.marketId,
-      indexerStatus: m.status,
-      venueId: m.venueId ?? undefined,
-      asset: m.asset ?? undefined,
-      intervalSec: m.intervalSec ?? undefined,
-      expiry: String(m.expiry ?? onchain.expiry),
-      onchainStatus: onchain.statusLabel,
-      pool: onchain.pool,
-      nonce: onchain.nonce.toString(),
-      decimals: onchain.decimals,
-      voidPolicy: onchain.voidPolicy,
-      tickSize: book.tickSize.toString(),
-      lotSize: book.lotSize.toString(),
-      minQuantity: book.minQuantity.toString(),
-      fees,
-      bookLevels,
-      openPrice: scaleOracleNumeric(opening[id] ?? opening[m.marketId]),
-      closePrice: scaleOracleNumeric(resolution[id] ?? resolution[m.marketId]),
-      livePrice: feedPrice[asset],
-      priceHistory: feedHistory[asset],
-      oracleQuestionId:
-        onchain.oracleQuestionId && onchain.oracleQuestionId !== 0n
-          ? onchain.oracleQuestionId.toString()
-          : null,
-    });
-  }
+  const built = await Promise.all(
+    slice.map(async (m): Promise<HarnessRow | null> => {
+      if (!m.marketId || !m.poolAddress) return null;
+      try {
+        const onchain = await getMarketOnchainHttp(
+          sh,
+          SHANNON_ADDRESSES.binaryModule as Address,
+          m.marketId,
+        );
+        const book = await getBinaryBookParamsHttp(sh, onchain.pool);
+        let fees: unknown = null;
+        try {
+          fees = await exchange.client.getMarketFees(m.marketId);
+        } catch {
+          fees = { error: "getMarketFees failed" };
+        }
+        let bookLevels: { bids: number; asks: number } | null = null;
+        try {
+          const ob = await exchange.client.getBinaryOrderBook(m.poolAddress);
+          bookLevels = {
+            bids: ob.yesBids?.length ?? 0,
+            asks: ob.yesAsks?.length ?? 0,
+          };
+        } catch {
+          bookLevels = null;
+        }
+        const id = m.marketId.toLowerCase();
+        const asset = (m.asset ?? "").toUpperCase() === "ETH" ? "ETH" : "BTC";
+        const indexedQ =
+          m.oracleQuestionId != null && String(m.oracleQuestionId) !== "" && String(m.oracleQuestionId) !== "0"
+            ? String(m.oracleQuestionId)
+            : null;
+        const onchainQ =
+          onchain.oracleQuestionId && onchain.oracleQuestionId !== 0n
+            ? onchain.oracleQuestionId.toString()
+            : null;
+        return {
+          marketId: m.marketId,
+          indexerStatus: m.status,
+          venueId: m.venueId ?? undefined,
+          asset: m.asset ?? undefined,
+          intervalSec: m.intervalSec ?? undefined,
+          expiry: String(m.expiry ?? onchain.expiry),
+          onchainStatus: onchain.statusLabel,
+          pool: onchain.pool,
+          nonce: onchain.nonce.toString(),
+          decimals: onchain.decimals,
+          voidPolicy: onchain.voidPolicy,
+          tickSize: book.tickSize.toString(),
+          lotSize: book.lotSize.toString(),
+          minQuantity: book.minQuantity.toString(),
+          fees,
+          bookLevels,
+          openPrice: scaleOracleNumeric(opening[id] ?? opening[m.marketId]),
+          closePrice: scaleOracleNumeric(resolution[id] ?? resolution[m.marketId]),
+          livePrice: feedPrice[asset],
+          priceHistory: feedHistory[asset],
+          oracleQuestionId: indexedQ ?? onchainQ,
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const rows = built.filter((r): r is HarnessRow => r != null);
 
   const out = { generatedAt: new Date().toISOString(), count: rows.length, rows };
   mkdirSync(resolve(process.cwd(), "docs/evidence"), { recursive: true });

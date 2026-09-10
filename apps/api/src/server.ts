@@ -46,6 +46,26 @@ const dep = (() => {
 
 const allowedOrigins = parseCorsOrigins(process.env.CORS_ORIGINS);
 
+const MARKETS_TTL_MS = 20_000;
+let marketsCache: { at: number; body: unknown } | null = null;
+let marketsInflight: Promise<unknown> | null = null;
+
+async function liveMarketsPayload(): Promise<unknown> {
+  if (marketsCache && Date.now() - marketsCache.at < MARKETS_TTL_MS) {
+    return marketsCache.body;
+  }
+  if (marketsInflight) return marketsInflight;
+  marketsInflight = runShannonHarness(8)
+    .then((body) => {
+      marketsCache = { at: Date.now(), body };
+      return body;
+    })
+    .finally(() => {
+      marketsInflight = null;
+    });
+  return marketsInflight;
+}
+
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("content-type", "application/json");
@@ -177,8 +197,7 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
         return;
       }
       if (url.pathname === "/v1/markets/live") {
-        const harness = await runShannonHarness(8);
-        json(res, 200, harness);
+        json(res, 200, await liveMarketsPayload());
         return;
       }
       if (url.pathname === "/v1/arena") {
