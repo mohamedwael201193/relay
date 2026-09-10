@@ -414,6 +414,31 @@ export function LiveBridge() {
   }, []);
 
   useEffect(() => {
+    if (!isLiveMode()) return undefined;
+    let cancelled = false;
+    async function loadPublic() {
+      try {
+        const [arena, net] = await Promise.all([relayApi.arena(), relayApi.network().catch(() => publicNetwork())]);
+        if (cancelled) return;
+        const myVault = useRelay.getState().vaultAddress;
+        useRelay.setState({
+          arena: arenaFromRows(arena.runners ?? [], myVault),
+          apiError: null,
+        });
+        void net;
+      } catch (e) {
+        if (!cancelled) reportApiError((e as Error).message);
+      }
+    }
+    void loadPublic();
+    const t = window.setInterval(() => void loadPublic(), 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isLiveMode() || !ready || !authenticated || !walletsReady) return undefined;
     if (!owner) {
       if (!triedCreate.current) {
