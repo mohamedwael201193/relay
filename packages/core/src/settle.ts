@@ -1,4 +1,4 @@
-import { parseAbi, type Address, type Hex } from "viem";
+import { parseAbi, parseAbiItem, type Address, type Hex } from "viem";
 import type { LocalAccount } from "viem/accounts";
 import { SHANNON_ADDRESSES, requiredAddress } from "./addresses.js";
 import { getMarketOnchainHttp } from "./onchain.js";
@@ -212,7 +212,29 @@ export async function settleFilledMarket(
       syncVaultTx = sv.transactionHash;
       txs.push({ name: "syncResolution", hash: sv.transactionHash, status: sv.status });
     } else {
-      txs.push({ name: "syncResolution", hash: "skipped_reactivity", status: "success" });
+      const lapSettledEvent = parseAbiItem(
+        "event LapSettled(bytes32 indexed marketId, uint256 questionId, bool voided, uint8 winningOutcome, bool fromCallback)",
+      );
+      try {
+        const latest = await client.getBlockNumber();
+        const fromBlock = latest > 999n ? latest - 999n : 0n;
+        const logs = await client.getLogs({
+          address: vault,
+          event: lapSettledEvent,
+          args: { marketId },
+          fromBlock,
+          toBlock: latest,
+        });
+        const hit = logs.find((l) => Boolean(l.args.fromCallback)) ?? logs.at(-1);
+        if (hit) {
+          syncVaultTx = hit.transactionHash;
+          txs.push({ name: "LapSettled", hash: hit.transactionHash, status: "success" });
+        } else {
+          txs.push({ name: "syncResolution", hash: "skipped_reactivity", status: "success" });
+        }
+      } catch {
+        txs.push({ name: "syncResolution", hash: "skipped_reactivity", status: "success" });
+      }
     }
 
     let moduleApproved = moduleApprovedStart;
