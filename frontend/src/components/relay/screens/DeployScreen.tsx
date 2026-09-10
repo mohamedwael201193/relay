@@ -548,21 +548,33 @@ export function DeployScreen() {
             className="hardshadow-d w-full max-w-xs rounded-2xl border-2 border-lime bg-panel px-6 py-7"
           >
             <div className="flex flex-col items-center text-center">
-              <Radio
-                className="size-6 animate-[spin_2s_linear_infinite] text-lime"
-                aria-hidden
-              />
+              {txPhase?.status === "failed" ? null : (
+                <Radio
+                  className="size-6 animate-[spin_2s_linear_infinite] text-lime"
+                  aria-hidden
+                />
+              )}
               <div className="mlabel mt-4 text-cream">
                 {txPhase?.label ?? "DEPLOYING VAULT → FUNDING → ARMING…"}
               </div>
-              <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-lined">
-                <motion.div
-                  initial={{ width: "0%" }}
-                  animate={{ width: "100%" }}
-                  transition={{ duration: 1.15, ease: "linear" }}
-                  className="h-full bg-lime"
-                />
-              </div>
+              {txPhase?.status === "failed" ? (
+                <button
+                  type="button"
+                  className="mlabel mt-5 rounded-xl border-2 border-lined px-5 py-3 text-cream hover:border-foam"
+                  onClick={() => setIgniting(false)}
+                >
+                  CLOSE
+                </button>
+              ) : (
+                <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-lined">
+                  <motion.div
+                    initial={{ width: "0%" }}
+                    animate={{ width: "100%" }}
+                    transition={{ duration: 1.15, ease: "linear" }}
+                    className="h-full bg-lime"
+                  />
+                </div>
+              )}
             </div>
           </motion.div>
         </div>

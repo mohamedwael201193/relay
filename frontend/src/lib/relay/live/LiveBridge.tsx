@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { useActiveWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import {
   createPublicClient,
   createWalletClient,
@@ -23,7 +23,7 @@ import { isLiveMode } from "@/lib/relay/live/mode";
 import { somniaShannon } from "@/lib/relay/live/chain";
 import { ownerMessage, vaultWriteAbi } from "@/lib/relay/live/abi";
 import { registerLiveHandlers } from "@/lib/relay/live/registry";
-import { ownerFromPrivy } from "@/lib/relay/live/ownerAddress";
+import { ownerFromPrivy, pickConnectedWallet } from "@/lib/relay/live/ownerAddress";
 import {
   arenaFromRows,
   calendarFromMarkets,
@@ -168,28 +168,44 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
 export function LiveBridge() {
   const { ready, authenticated, login, user, createWallet } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
-  const owner = ownerFromPrivy({ wallets, user });
-  const ctx = useRef({ wallets, authenticated, login, user, createWallet });
-  ctx.current = { wallets, authenticated, login, user, createWallet };
+  const { wallet: activeWallet } = useActiveWallet();
+  const owner = ownerFromPrivy({
+    wallets: activeWallet?.address ? [activeWallet, ...wallets] : wallets,
+    user,
+  });
+  const mergedWallets = (
+    activeWallet?.address
+      ? [
+          activeWallet as ConnectedWallet,
+          ...wallets.filter((w) => w.address.toLowerCase() !== activeWallet.address.toLowerCase()),
+        ]
+      : wallets
+  ) as ConnectedWallet[];
+  const ctx = useRef({ wallets: mergedWallets, authenticated, login, user, createWallet, owner });
+  ctx.current = { wallets: mergedWallets, authenticated, login, user, createWallet, owner };
   const triedCreate = useRef(false);
 
   useEffect(() => {
     if (!isLiveMode()) return undefined;
 
     async function clients(net: NetworkConfig) {
-      const wallet = ctx.current.wallets[0] as ConnectedWallet | undefined;
-      if (!wallet) throw new Error("Connect a wallet first");
-      if (wallet.chainId && !String(wallet.chainId).includes(String(SHANNON_CHAIN_ID))) {
-        await wallet.switchChain(SHANNON_CHAIN_ID);
+      const wallet = pickConnectedWallet(ctx.current.wallets, ctx.current.owner);
+      const injected = (window as unknown as { ethereum?: EthereumProvider }).ethereum;
+      if (!wallet && !injected) throw new Error("Connect a wallet first");
+      if (wallet?.chainId && !String(wallet.chainId).includes(String(SHANNON_CHAIN_ID))) {
+        await wallet.switchChain(SHANNON_CHAIN_ID).catch(() => undefined);
       }
-      const provider = await wallet.getEthereumProvider();
+      const provider = injected ?? (await wallet!.getEthereumProvider());
+      const authorized = (await provider.request({ method: "eth_requestAccounts" })) as string[];
+      const account = (authorized[0] ?? wallet?.address ?? ctx.current.owner) as Address;
+      if (!account) throw new Error("Connect a wallet first");
       const walletClient = createWalletClient({
-        account: wallet.address as Address,
+        account,
         chain: somniaShannon,
         transport: custom(provider),
       });
       const publicClient = await publicFor(net);
-      return { walletClient, publicClient, owner: wallet.address as Address };
+      return { walletClient, publicClient, owner: account };
     }
 
     async function signAction(
@@ -232,6 +248,7 @@ export function LiveBridge() {
     registerLiveHandlers({
       deploy: async () => {
         try {
+          phase("Waiting for wallet", "waiting");
           if (!ctx.current.authenticated) {
             ctx.current.login();
             return;
@@ -375,7 +392,7 @@ export function LiveBridge() {
     }));
 
     (async () => {
-      const wallet = wallets[0] as ConnectedWallet | undefined;
+      const wallet = pickConnectedWallet(wallets as ConnectedWallet[], owner);
       if (wallet?.chainId && !String(wallet.chainId).includes(String(SHANNON_CHAIN_ID))) {
         await wallet.switchChain(SHANNON_CHAIN_ID).catch(() => undefined);
       }

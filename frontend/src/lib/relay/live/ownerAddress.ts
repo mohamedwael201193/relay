@@ -1,3 +1,15 @@
+/** Prefer the wallet that matches the active owner; otherwise the first connected wallet. */
+export function pickConnectedWallet<T extends { address?: string }>(
+  wallets: T[],
+  owner?: string,
+): T | undefined {
+  if (owner) {
+    const hit = wallets.find((w) => w.address?.toLowerCase() === owner.toLowerCase());
+    if (hit) return hit;
+  }
+  return wallets[0];
+}
+
 /** Resolve the connected EVM address from Privy wallets / linked accounts. */
 export function ownerFromPrivy(input: {
   wallets: Array<{ address?: string }>;

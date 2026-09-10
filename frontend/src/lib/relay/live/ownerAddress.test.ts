@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { ownerFromPrivy } from "./ownerAddress";
+import { ownerFromPrivy, pickConnectedWallet } from "./ownerAddress";
+
+describe("pickConnectedWallet", () => {
+  it("matches the active owner when several wallets are connected", () => {
+    const wallets = [
+      { address: "0x1111111111111111111111111111111111111111" },
+      { address: "0x2222222222222222222222222222222222222222" },
+    ];
+    expect(pickConnectedWallet(wallets, "0x2222222222222222222222222222222222222222")?.address).toBe(
+      "0x2222222222222222222222222222222222222222",
+    );
+  });
+});
 
 describe("ownerFromPrivy", () => {
   it("prefers the connected wallet list", () => {

@@ -1,7 +1,8 @@
 "use client";
 
-import { usePrivy } from "@privy-io/react-auth";
+import { useActiveWallet, usePrivy, useWallets } from "@privy-io/react-auth";
 import { publicEnv } from "@/lib/relay/config/network";
+import { shortAddr } from "@/lib/relay/format";
 import { CtlButton } from "../screens/settings/ui";
 
 export function WalletAuthControls() {
@@ -16,7 +17,10 @@ export function WalletAuthControls() {
 }
 
 function WalletAuthInner() {
-  const { ready, authenticated, login, logout } = usePrivy();
+  const { ready, authenticated, login, logout, createWallet } = usePrivy();
+  const { wallets } = useWallets();
+  const { wallet: active, setActiveWallet } = useActiveWallet();
+
   if (!ready) {
     return (
       <span className="mlabel min-h-[36px] rounded-lg border-2 border-lined bg-panel2 px-2.5 text-foam">
@@ -31,9 +35,35 @@ function WalletAuthInner() {
       </CtlButton>
     );
   }
+
+  const hasEmbedded = wallets.some((w) => w.walletClientType === "privy");
+
   return (
-    <CtlButton tone="outline" onClick={() => logout()}>
-      DISCONNECT
-    </CtlButton>
+    <>
+      {wallets.length > 1
+        ? wallets.map((w) => (
+            <CtlButton
+              key={w.address}
+              tone={active?.address?.toLowerCase() === w.address.toLowerCase() ? "lime" : "outline"}
+              onClick={() => setActiveWallet(w)}
+            >
+              {shortAddr(w.address)}
+            </CtlButton>
+          ))
+        : null}
+      {!hasEmbedded ? (
+        <CtlButton
+          tone="outline"
+          onClick={() => {
+            void createWallet().catch(() => undefined);
+          }}
+        >
+          ADD WALLET
+        </CtlButton>
+      ) : null}
+      <CtlButton tone="outline" onClick={() => logout()}>
+        DISCONNECT
+      </CtlButton>
+    </>
   );
 }
