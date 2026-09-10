@@ -25,7 +25,7 @@ import { somniaShannon } from "@/lib/relay/live/chain";
 import { ownerMessage, vaultWriteAbi } from "@/lib/relay/live/abi";
 import { registerLiveHandlers } from "@/lib/relay/live/registry";
 import { ownerFromPrivy, pickConnectedWallet } from "@/lib/relay/live/ownerAddress";
-import { pickOwnedVault } from "@/lib/relay/live/pickOwnedVault";
+import { pickOwnedVault, selectDeployVault } from "@/lib/relay/live/pickOwnedVault";
 import {
   arenaFromRows,
   calendarFromMarkets,
@@ -273,11 +273,31 @@ export function LiveBridge() {
       publicClient: Awaited<ReturnType<typeof publicFor>>,
       tx: { to: Address; data: Hex },
     ) {
+      phase("Checking network", "waiting");
+      let gas: bigint;
+      try {
+        gas = await publicClient.estimateGas({
+          account: walletClient.account!,
+          to: tx.to,
+          data: tx.data,
+        });
+      } catch (e) {
+        const msg = (e as Error).message ?? "";
+        if (/killed|0x/i.test(msg) && /Killed|killed/.test(msg)) {
+          throw new Error("This runner is already killed. Start again to deploy a new vault.");
+        }
+        throw new Error(
+          msg.includes("insufficient funds")
+            ? "Not enough STT for gas on Somnia Shannon"
+            : "This transaction would fail on-chain. No wallet popup was opened.",
+        );
+      }
       phase("Submitting", "submitting");
       const hash = await walletClient.sendTransaction({
         account: walletClient.account!,
         chain: somniaShannon,
         ...tx,
+        gas: gas + gas / 5n,
       });
       phase("Confirming", "confirming", hash);
       const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 180_000 });
@@ -308,42 +328,82 @@ export function LiveBridge() {
           const { walletClient, publicClient, owner } = await clients(net);
           const cfg = useRelay.getState().draftConfig;
           const listed = await relayApi.runnersByOwner(owner);
-          let vault = listed.runners.find((r) => r.state !== "KILLED")?.vault;
+          const killedOnChain: Record<string, boolean> = {};
+          await Promise.all(
+            listed.runners.map(async (r) => {
+              try {
+                killedOnChain[r.vault.toLowerCase()] = Boolean(
+                  await publicClient.readContract({
+                    address: r.vault as Address,
+                    abi: vaultWriteAbi,
+                    functionName: "killed",
+                  }),
+                );
+              } catch {
+                killedOnChain[r.vault.toLowerCase()] = true;
+              }
+            }),
+          );
+          let vault = selectDeployVault(listed.runners, killedOnChain);
           const unit = parseUnits(String(cfg.budget), net.decimals);
           const stop = parseUnits(String(cfg.stopLoss), net.decimals);
           if (!vault) {
+            phase("Creating vault", "signing");
             const auth = await signAction("provision", "new", owner, walletClient);
             const created = await relayApi.provision({ ...auth, budget: cfg.budget, stopLoss: cfg.stopLoss });
             vault = created.vault;
           }
-          const vaultBal = await publicClient.readContract({
-            address: net.collateral as Address,
-            abi: erc20Abi,
-            functionName: "balanceOf",
-            args: [vault as Address],
-          });
+          const vaultAddr = vault as Address;
+          const [vaultBal, currentOperator, currentBudget, allowance] = await Promise.all([
+            publicClient.readContract({
+              address: net.collateral as Address,
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [vaultAddr],
+            }),
+            publicClient.readContract({
+              address: vaultAddr,
+              abi: vaultWriteAbi,
+              functionName: "operator",
+            }),
+            publicClient.readContract({
+              address: vaultAddr,
+              abi: vaultWriteAbi,
+              functionName: "budget",
+            }),
+            publicClient.readContract({
+              address: net.collateral as Address,
+              abi: erc20Abi,
+              functionName: "allowance",
+              args: [owner, vaultAddr],
+            }),
+          ]);
           const needsFund = vaultBal === 0n;
           if (needsFund) {
-            if (net.operator) {
+            if (net.operator && String(currentOperator).toLowerCase() !== net.operator.toLowerCase()) {
               await send(walletClient, publicClient, {
-                to: vault as Address,
+                to: vaultAddr,
                 data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "setOperatorNow", args: [net.operator as Address] }),
               });
             }
+            if (currentBudget !== unit) {
+              await send(walletClient, publicClient, {
+                to: vaultAddr,
+                data: encodeFunctionData({
+                  abi: vaultWriteAbi,
+                  functionName: "setCaps",
+                  args: [unit, unit, stop, unit],
+                }),
+              });
+            }
+            if (allowance < unit) {
+              await send(walletClient, publicClient, {
+                to: net.collateral as Address,
+                data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [vaultAddr, unit] }),
+              });
+            }
             await send(walletClient, publicClient, {
-              to: vault as Address,
-              data: encodeFunctionData({
-                abi: vaultWriteAbi,
-                functionName: "setCaps",
-                args: [unit, unit, stop, unit],
-              }),
-            });
-            await send(walletClient, publicClient, {
-              to: net.collateral as Address,
-              data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [vault as Address, unit] }),
-            });
-            await send(walletClient, publicClient, {
-              to: vault as Address,
+              to: vaultAddr,
               data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "deposit", args: [unit] }),
             });
           }

@@ -2,13 +2,16 @@
 
 Self-driving bounded runners for [DreamDEX Event Contracts](https://docs.dreamdex.io/developers/event-contracts) on Somnia.
 
-This repository is **backend, contracts, workers, and proof**. The frontend is built separately.
+This repository is **backend, contracts, workers, and the live frontend**.
 
 ## Status
 
 Shannon testnet contracts are deployed and a real fill + redeem path has been executed. This is **not** mainnet-ready. Secrets in any chat or local `.env` must be rotated before production.
 
-Live Render web (API + worker in one Free process, `pnpm start`): [https://relay-api-71gi.onrender.com/health](https://relay-api-71gi.onrender.com/health). Do not enable `MAINNET_TRADING_ENABLED`.
+- App: [https://relay-silk-one.vercel.app](https://relay-silk-one.vercel.app)
+- API + worker: [https://relay-api-71gi.onrender.com/health](https://relay-api-71gi.onrender.com/health)
+
+Somnia Shannon only (`chainId` 50312). MetaMask may show a first-visit site warning on the Vercel host — that is the wallet, not a drain. Do not enable `MAINNET_TRADING_ENABLED`. A killed runner cannot be re-deposited; RELAY creates a new vault instead.
 
 Pinned protocol packages:
 

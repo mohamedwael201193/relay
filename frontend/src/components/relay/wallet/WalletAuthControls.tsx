@@ -5,7 +5,7 @@ import { publicEnv } from "@/lib/relay/config/network";
 import { shortAddr } from "@/lib/relay/format";
 import { CtlButton } from "../screens/settings/ui";
 
-export function WalletAuthControls() {
+export function WalletAuthControls({ compact = false }: { compact?: boolean }) {
   if (!publicEnv().privyAppId) {
     return (
       <span className="mlabel min-h-[36px] rounded-lg border-2 border-lined bg-panel2 px-2.5 text-foam">
@@ -13,10 +13,10 @@ export function WalletAuthControls() {
       </span>
     );
   }
-  return <WalletAuthInner />;
+  return <WalletAuthInner compact={compact} />;
 }
 
-function WalletAuthInner() {
+function WalletAuthInner({ compact }: { compact: boolean }) {
   const { ready, authenticated, login, logout, createWallet } = usePrivy();
   const { wallets } = useWallets();
   const { wallet: active, setActiveWallet } = useActiveWallet();
@@ -30,7 +30,7 @@ function WalletAuthInner() {
   }
   if (!authenticated) {
     return (
-      <CtlButton tone="lime" onClick={() => login()}>
+      <CtlButton tone="lime" className={compact ? "min-h-9 px-3 py-1.5" : undefined} onClick={() => login()}>
         CONNECT
       </CtlButton>
     );
@@ -40,7 +40,7 @@ function WalletAuthInner() {
 
   return (
     <>
-      {wallets.length > 1
+      {wallets.length > 1 && !compact
         ? wallets.map((w) => (
             <CtlButton
               key={w.address}
@@ -51,7 +51,7 @@ function WalletAuthInner() {
             </CtlButton>
           ))
         : null}
-      {!hasEmbedded ? (
+      {!hasEmbedded && !compact ? (
         <CtlButton
           tone="outline"
           onClick={() => {
@@ -61,7 +61,7 @@ function WalletAuthInner() {
           ADD WALLET
         </CtlButton>
       ) : null}
-      <CtlButton tone="outline" onClick={() => logout()}>
+      <CtlButton tone="outline" className={compact ? "min-h-9 px-3 py-1.5" : undefined} onClick={() => logout()}>
         DISCONNECT
       </CtlButton>
     </>

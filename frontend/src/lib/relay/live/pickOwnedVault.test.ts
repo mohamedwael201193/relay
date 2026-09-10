@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickOwnedVault } from "./pickOwnedVault";
+import { pickOwnedVault, selectDeployVault } from "./pickOwnedVault";
 
 const B = "0x1506f2177769ecb8fa4903160c896e68f5d15747";
 const OPS = "0xd762a7719f0e991413038276a37abf7a417d4d59";
@@ -33,5 +33,16 @@ describe("pickOwnedVault", () => {
 
   it("keeps a killed owned vault when that is all the owner has (withdraw)", () => {
     expect(pickOwnedVault([{ vault: B, state: "KILLED" }], B)).toBe(B);
+  });
+});
+
+describe("selectDeployVault", () => {
+  it("does not reuse a STOPPED or on-chain-killed vault for deposit", () => {
+    expect(selectDeployVault([{ vault: B, state: "STOPPED" }])).toBeNull();
+    expect(selectDeployVault([{ vault: B, state: "ORDER_SUBMITTED" }], { [B]: true })).toBeNull();
+  });
+
+  it("reuses a live vault that is not killed on-chain", () => {
+    expect(selectDeployVault([{ vault: B, state: "WAITING_MARKET" }], { [B]: false })).toBe(B);
   });
 });

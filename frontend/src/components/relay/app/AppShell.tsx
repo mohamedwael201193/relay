@@ -27,10 +27,10 @@ import type { LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { selectUnread, useRelay } from "@/lib/relay/engine/store";
-import { countdown, money, shortAddr } from "@/lib/relay/format";
+import { countdown, money } from "@/lib/relay/format";
 import type { AppScreen } from "@/lib/relay/types";
 import { cn } from "@/lib/utils";
-import { AssetIcon, FlameMark, RelayLogo } from "../identity/identity";
+import { FlameMark, RelayLogo } from "../identity/identity";
 import { LapRing } from "../core/LapRing";
 import { LiveDot } from "../core/primitives";
 import { MyRunnerScreen } from "../screens/MyRunnerScreen";
@@ -42,6 +42,7 @@ import { HistoryScreen } from "../screens/HistoryScreen";
 import { AnalyticsScreen } from "../screens/AnalyticsScreen";
 import { NotificationsScreen } from "../screens/NotificationsScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
+import { NavWallet } from "../wallet/NavWallet";
 
 /* ── screen registry ('result' re-uses MY RUNNER) ─────────────── */
 
@@ -145,7 +146,6 @@ function Rail() {
   const screen = useRelay((s) => s.screen);
   const go = useRelay((s) => s.go);
   const goScreen = useRelay((s) => s.goScreen);
-  const wallet = useRelay((s) => s.wallet);
   const unread = useRelay((s) => selectUnread(s.notifications));
   const navKey = navKeyFor(screen);
 
@@ -214,13 +214,7 @@ function Rail() {
         <div className="mb-3">
           <LiveDot tone="lime" label="SOMNIA · SHANNON" />
         </div>
-        <div className="flex items-center gap-2.5 rounded-xl border-2 border-lined bg-panel2/60 px-3 py-2.5">
-          <AssetIcon asset="tUSDC" size={22} />
-          <div className="min-w-0 leading-none">
-            <div className="data text-sm text-cream">{money(wallet.tUSDC)}</div>
-            <div className="mlabel mt-1.5 text-foam/70">{shortAddr(wallet.address)}</div>
-          </div>
-        </div>
+        <NavWallet />
       </div>
     </aside>
   );
@@ -243,6 +237,8 @@ function BroadcastBar() {
       <span className="mlabel shrink-0 text-foam">{KICKER[screen]}</span>
 
       <div className="ml-auto flex min-w-0 items-center gap-4">
+        <NavWallet />
+        <Divider />
         {liveLap ? (
           <>
             <LiveDot tone="lime" label={`${liveLap.market.asset} UP/DOWN`} />
@@ -297,7 +293,6 @@ function BroadcastBar() {
 function MobileTopBar() {
   const go = useRelay((s) => s.go);
   const goScreen = useRelay((s) => s.goScreen);
-  const wallet = useRelay((s) => s.wallet);
   const unread = useRelay((s) => selectUnread(s.notifications));
 
   return (
@@ -310,9 +305,8 @@ function MobileTopBar() {
       >
         <RelayLogo tone="cream" compact />
       </button>
-      <div className="flex items-center gap-1.5" aria-label="Wallet balance">
-        <AssetIcon asset="tUSDC" size={18} />
-        <span className="data text-sm text-cream">{money(wallet.tUSDC)}</span>
+      <div className="flex min-w-0 items-center gap-1.5" aria-label="Wallet">
+        <NavWallet />
       </div>
       <button
         type="button"

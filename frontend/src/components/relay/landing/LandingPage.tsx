@@ -12,11 +12,12 @@ import type { MouseEvent } from "react";
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRelay } from "@/lib/relay/engine/store";
-import { countdown } from "@/lib/relay/format";
+import { countdown, money } from "@/lib/relay/format";
 import { RelayLogo } from "../identity/identity";
 import { TickerStrip } from "../core/primitives";
 import { ctaInk, ctaLink, ctaPrimary, focusRing, LandingMotionStyles, Reveal } from "./ui";
 import { HeroArt, HeroArtMobile, HeroSealSticker, StreakFlameSticker } from "./hero-art";
+import { WalletAuthControls } from "../wallet/WalletAuthControls";
 import {
   ArenaSection,
   FinalCtaSection,
@@ -38,6 +39,16 @@ const NAV_LINKS = [
 function scrollToId(e: MouseEvent<HTMLAnchorElement>, id: string) {
   e.preventDefault();
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function LandingNavWallet() {
+  const wallet = useRelay((s) => s.wallet);
+  return (
+    <div className="flex items-center gap-2">
+      <span className="data hidden text-sm font-semibold text-ink sm:inline">{money(wallet.tUSDC)}</span>
+      <WalletAuthControls compact />
+    </div>
+  );
 }
 
 /* ── nav (sticky, paper, ink hairline) ──────────────────────── */
@@ -90,6 +101,7 @@ function LandingNav() {
               {asset} · {cd}
             </span>
           </button>
+          <LandingNavWallet />
           <button type="button" onClick={() => go("app")} className={cn(ctaInk, "px-4 py-2.5 sm:px-5")}>
             OPEN THE APP
           </button>

@@ -217,7 +217,9 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
           json(res, auth.status, { error: auth.error });
           return;
         }
-        const existing = (await listRunnersByOwner(auth.owner)).filter((r) => r.state !== "KILLED");
+        const existing = (await listRunnersByOwner(auth.owner)).filter(
+          (r) => r.state !== "KILLED" && r.state !== "STOPPED",
+        );
         if (existing[0]) {
           json(res, 409, { error: "runner_exists", runner: existing[0] });
           return;
