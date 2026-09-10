@@ -1,0 +1,55 @@
+# Secrets — never commit
+.env
+.env.local
+.env.testnet
+.env.mainnet
+.env.production
+.env.*.local
+*.pem
+*.key
+id_rsa
+id_ed25519
+
+# Local-only planning, history, research (never push except README.md)
+HISTORY.md
+RELAY-*.md
+01-*.md
+02-*.md
+03-*.md
+04-*.md
+docs/**/*.md
+docs/evidence/
+
+# Research clones and package tarballs (local verification only)
+.research/
+.vendor/
+*.tgz
+
+# Dependencies and build
+node_modules/
+dist/
+coverage/
+contracts/out/
+contracts/cache/
+broadcast/
+cache/
+# Foundry libs installed locally / in CI
+contracts/lib/
+
+# Foundry binaries / research clones
+.vendor/
+
+# Tooling
+.foundry/
+.pnpm-store/
+.turbo/
+.next/
+.vercel/
+.DS_Store
+Thumbs.db
+
+# Logs and local evidence dumps that may contain RPC URLs
+*.log
+logs/
+tmp/
+.cache/

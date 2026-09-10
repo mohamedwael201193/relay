@@ -1,0 +1,39 @@
+{
+  "name": "relay",
+  "private": true,
+  "version": "0.1.0",
+  "description": "RELAY — bounded self-driving runners for DreamDEX Event Contracts on Somnia",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.34.5",
+  "dependencies": {
+    "@openzeppelin/contracts": "5.4.0",
+    "@relay/core": "workspace:*",
+    "@relay/db": "workspace:*",
+    "@somnia-chain/reactivity-contracts": "0.2.1"
+  },
+  "scripts": {
+    "doctor": "tsx scripts/doctor.ts",
+    "harness": "tsx scripts/harness.ts",
+    "faucet": "tsx scripts/faucet.ts",
+    "deploy:shannon": "tsx scripts/deploy-shannon.ts",
+    "vault:fund": "tsx scripts/vault-funding.ts",
+    "place:shannon": "tsx scripts/place-order.ts",
+    "settle:shannon": "tsx scripts/settle-shannon.ts",
+    "db:migrate": "tsx scripts/db-migrate.ts",
+    "db:persist-gold": "tsx scripts/persist-gold.ts",
+    "api": "tsx apps/api/src/server.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

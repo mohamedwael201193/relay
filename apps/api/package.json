@@ -1,0 +1,13 @@
+{
+  "name": "@relay/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@relay/core": "workspace:*",
+    "@relay/db": "workspace:*"
+  }
+}

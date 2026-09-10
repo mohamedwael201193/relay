@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master, feat/**]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm typecheck
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: pnpm install --frozen-lockfile
+      - run: git clone --depth 1 https://github.com/foundry-rs/forge-std contracts/lib/forge-std
+      - run: forge test -vv

@@ -1,0 +1,25 @@
+{
+  "chainId": 50312,
+  "vault": "0xd762a7719f0e991413038276a37abf7a417d4d59",
+  "registry": "0xc45689f5d6d0bbd2f87c03a16ead46848d1b2eb0",
+  "manager": "0x837aab854ed970e1185c674c583fb898be36d889",
+  "deployer": "0xBDfCeE82Bd42FEfA58ee850B3709636a8B6b0034",
+  "txs": [
+    "0xef7cf6212b282a2537873f5667ce5338b5ce7791714a7d15d4b378cd14cb35ad",
+    "0xab6b3ece4af0eba5b72f9f1739fa61650ba93469822da743a5b2b5a6dc49dce7",
+    "0xddefd226ac9d4f032c878c2c3df19fb93600c3a8f5f3bab0a4661b051785c0bf",
+    "0xf5a6ebae46308928391ff0f7cc3a3294efc5d0a4961019414407a38dcfdcdef4"
+  ],
+  "vaultCodeBytes": 10107,
+  "vaultGasUsed": "35008657",
+  "registryGasUsed": "2425047",
+  "managerGasUsed": "8551670",
+  "setOperatorTx": "0xf5a6ebae46308928391ff0f7cc3a3294efc5d0a4961019414407a38dcfdcdef4",
+  "collateral": "0x70a86D8842FB63C4Ad2b7cdddF530eBf1BB25d8E",
+  "module": "0x3ecC694Cef705358864a646142ac17A90E29e388",
+  "oracleHub": "0xe40db387cC98601Dd11bd634fF2f3AD5686dE32b",
+  "priceDecimals": 6,
+  "sendPath": "eth_sendRawTransaction",
+  "evmVersion": "cancun",
+  "codeGasPerByte": 3125
+}
