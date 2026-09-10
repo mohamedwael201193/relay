@@ -248,6 +248,7 @@ function AdvancedSection({
                 </button>
               ))}
             </div>
+            <div className="mlabel mt-2 text-foam/60">SHIELDS ARE NOT ENFORCED ON-CHAIN YET</div>
           </fieldset>
         </div>
       )}
@@ -281,9 +282,9 @@ function SummaryPanel({
         <div>
           <div className="mlabel text-foam">WORST CASE</div>
           <div className="data mt-1.5 text-4xl font-semibold leading-none text-ember">
-            {money(-draft.stopLoss)}
+            {money(-Math.min(draft.stopLoss, draft.budget))}
           </div>
-          <div className="text-xs text-foam/80 mt-1.5">the stop-loss — nothing beyond it</div>
+          <div className="text-xs text-foam/80 mt-1.5">the stop-loss — nothing beyond the budget</div>
         </div>
         <div className="grid gap-2 border-t-2 border-lined pt-4">
           <SafetyRow Icon={Lock} text="Runner cannot withdraw" />
@@ -462,7 +463,7 @@ export function DeployScreen() {
                     <ChoiceTile
                       key={b}
                       selected={draft.budget === b}
-                      onSelect={() => setDraft({ budget: b })}
+                      onSelect={() => setDraft({ budget: b, stopLoss: Math.min(draft.stopLoss, b) })}
                       ariaLabel={`Budget ${money(b)}`}
                     >
                       <span className="flex items-center gap-2.5">
@@ -480,7 +481,7 @@ export function DeployScreen() {
               <fieldset>
                 <GroupLegend index="03" title="STOP-LOSS" hint="the hard floor" />
                 <div role="radiogroup" aria-label="Stop-loss" className="grid grid-cols-3 gap-3">
-                  {STOP_LOSSES.map((sl) => (
+                  {STOP_LOSSES.filter((sl) => sl <= draft.budget).map((sl) => (
                     <ChoiceTile
                       key={sl}
                       selected={draft.stopLoss === sl}
@@ -521,7 +522,7 @@ export function DeployScreen() {
           <div className="min-w-0">
             <div className="mlabel text-foam">WORST CASE</div>
             <div className="data mt-1 text-lg leading-none text-ember">
-              {money(-draft.stopLoss)}
+              {money(-Math.min(draft.stopLoss, draft.budget))}
             </div>
           </div>
           <button

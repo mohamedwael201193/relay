@@ -1,8 +1,11 @@
 /** RELAY — display formatters (financial numbers are sacred; never wing them). */
 
 export function money(v: number, opts?: { sign?: boolean; decimals?: number }) {
+  if (!Number.isFinite(v)) return "—";
   const abs0 = Math.abs(v);
-  const d = opts?.decimals ?? (abs0 > 0 && abs0 < 0.01 ? 6 : 2);
+  const d =
+    opts?.decimals ??
+    (abs0 > 0 && abs0 < 0.0001 ? 8 : abs0 > 0 && abs0 < 0.01 ? 6 : 2);
   const abs = Math.abs(v).toLocaleString("en-US", {
     minimumFractionDigits: d,
     maximumFractionDigits: d,
@@ -11,11 +14,12 @@ export function money(v: number, opts?: { sign?: boolean; decimals?: number }) {
   return `${sign}$${abs}`;
 }
 
-export function signed(v: number, decimals = 2) {
+export function signed(v: number, decimals?: number) {
   return money(v, { sign: true, decimals });
 }
 
 export function pct(v: number, decimals = 1) {
+  if (!Number.isFinite(v)) return "—";
   return `${(v * 100).toFixed(decimals)}%`;
 }
 
@@ -93,6 +97,7 @@ export function contracts(n: number) {
 }
 
 export function price(p: number, asset: string) {
+  if (!Number.isFinite(p) || p <= 0) return "—";
   if (asset === "ETH") return `$${p.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
   return `$${p.toLocaleString("en-US", { maximumFractionDigits: 1 })}`;
 }

@@ -295,7 +295,11 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
         if (msg.sender != owner && msg.sender != operator) revert NotOperator();
         uint128 id = armed.lastOrderId;
         if (id == 0) revert NotArmed();
+        uint256 committed = collateralCost(armed.kind, armed.price, armed.quantity);
         IBinaryPool(armed.pool).cancelOrder(id);
+        if (outstandingNotional >= committed) outstandingNotional -= committed;
+        else outstandingNotional = 0;
+        armed.lastOrderId = 0;
         emit Cancelled(id);
     }
 

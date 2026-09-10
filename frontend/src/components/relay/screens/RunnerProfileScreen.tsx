@@ -10,7 +10,7 @@
  * entry (seeded rng) — labeled "DERIVED FROM PUBLIC FILLS".
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, MotionConfig } from "framer-motion";
 import {
   ArrowLeft,
@@ -24,9 +24,11 @@ import {
 } from "lucide-react";
 
 import { useRelay } from "@/lib/relay/engine/store";
+import { relayApi, type ProofBundle } from "@/lib/relay/api/client";
+import { lapsFromHistory } from "@/lib/relay/live/apply";
 import { isLiveMode } from "@/lib/relay/live/mode";
 import { ago, cents, money, pct, shortAddr, signed } from "@/lib/relay/format";
-import type { ArenaRunner } from "@/lib/relay/types";
+import type { ArenaRunner, Lap } from "@/lib/relay/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { LiveDot, Panel, Sparkline, StatTile } from "../core/primitives";
@@ -300,40 +302,82 @@ function AthleteCard({ entry }: { entry: ArenaRunner }) {
 
 /* ── recent laps · public tape ──────────────────────────────── */
 
+function tapeRowsFromLaps(laps: Lap[]) {
+  return laps
+    .slice(-12)
+    .reverse()
+    .map((l) => ({
+      lap: l.number,
+      asset: l.market.asset,
+      side: l.side,
+      entry: l.entryPrice,
+      outcome: l.outcome,
+      pnl: l.pnl,
+      at: l.settledAt,
+    }));
+}
+
 function RecentLaps({ entry, now }: { entry: ArenaRunner; now: number }) {
   const laps = useRelay((s) => s.laps);
   const isYou = !!entry.isYou;
+  const live = isLiveMode();
+  const [publicLaps, setPublicLaps] = useState<Lap[] | null>(null);
 
-  // your tape is real; everyone else's is derived from public fills
+  useEffect(() => {
+    if (isYou || !live) {
+      setPublicLaps(null);
+      return;
+    }
+    let cancelled = false;
+    setPublicLaps(null);
+    void (async () => {
+      try {
+        const [history, proof] = await Promise.all([
+          relayApi.history(entry.runnerId),
+          relayApi.proof(entry.runnerId).catch(
+            () => ({ proof: { orders: [], settlements: [], records: [] } as ProofBundle }),
+          ),
+        ]);
+        if (cancelled) return;
+        const mapped = lapsFromHistory(
+          history.laps ?? [],
+          "proof" in proof ? proof.proof : { orders: [], settlements: [], records: [] },
+        );
+        setPublicLaps(mapped);
+      } catch {
+        if (!cancelled) setPublicLaps([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isYou, live, entry.runnerId]);
+
   const rows = isYou
-    ? laps
-        .slice(-12)
-        .reverse()
-        .map((l) => ({
-          lap: l.number,
-          asset: l.market.asset,
-          side: l.side,
-          entry: l.entryPrice,
-          outcome: l.outcome,
-          pnl: l.pnl,
-          at: l.settledAt,
-        }))
-    : isLiveMode()
-      ? []
+    ? tapeRowsFromLaps(laps)
+    : live
+      ? tapeRowsFromLaps(publicLaps ?? [])
       : synthTape(entry, now);
+  const emptyLiveOther = !isYou && live && (publicLaps == null || publicLaps.length === 0);
 
   return (
     <Panel label="RECENT LAPS · PUBLIC TAPE">
       <div className="flex items-center justify-between px-5 pt-2">
         <span className="mlabel text-foam/50">
-          {isYou ? "YOUR FILLS · VERIFIED" : "DERIVED FROM PUBLIC FILLS"}
+          {isYou ? "YOUR FILLS · VERIFIED" : live ? "PUBLIC FILLS" : "DERIVED FROM PUBLIC FILLS"}
         </span>
         <span className="mlabel text-foam/50">LAST 12</span>
       </div>
       <div className="mt-1 px-3 pb-3 sm:px-4" role="list" aria-label="Recent laps">
-        {rows.map((r) => (
-          <TapeRowItem key={r.lap} r={r} now={now} />
-        ))}
+        {emptyLiveOther ? (
+          <div className="px-2 py-6 text-center">
+            <span className="mlabel text-foam/60">
+              {publicLaps == null ? "LOADING PUBLIC TAPE…" : "NO PUBLIC FILLS YET"}
+            </span>
+          </div>
+        ) : (
+          rows.map((r) => <TapeRowItem key={r.lap} r={r} now={now} />)
+        )}
       </div>
     </Panel>
   );
@@ -348,7 +392,7 @@ function TapeRowItem({
     asset: "BTC" | "ETH";
     side: "UP" | "DOWN";
     entry: number;
-    outcome: "WIN" | "LOSS" | "VOID";
+    outcome: "WIN" | "LOSS" | "VOID" | "OPEN";
     pnl: number;
     at: number;
   };
@@ -356,10 +400,11 @@ function TapeRowItem({
 }) {
   const win = r.outcome === "WIN";
   const voided = r.outcome === "VOID";
-  const pnlTone = win ? "text-lime" : voided ? "text-foam" : "text-ember";
+  const open = r.outcome === "OPEN";
+  const pnlTone = win ? "text-lime" : voided || open ? "text-foam" : "text-ember";
   const chipTone = win
     ? "border-limedeep/60 text-lime"
-    : voided
+    : voided || open
       ? "border-lined text-foam"
       : "border-emberdeep/60 text-ember";
 

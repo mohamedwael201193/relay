@@ -14,6 +14,7 @@ import { FileJson, FileSpreadsheet, X } from "lucide-react";
 import { useRelay } from "@/lib/relay/engine/store";
 import { useToast } from "@/hooks/use-toast";
 import { pct, signed } from "@/lib/relay/format";
+import { summarizeTape } from "@/lib/relay/analytics";
 import { FlameMark } from "../identity/identity";
 import { cn } from "@/lib/utils";
 import { TAPE_GRID } from "./history/bits";
@@ -64,16 +65,7 @@ export function HistoryScreen() {
   const [asset, setAsset] = useState<AssetFilter>("BOTH");
   const [openLap, setOpenLap] = useState<number | null>(null);
 
-  const stats = useMemo(() => {
-    const wins = laps.filter((l) => l.outcome === "WIN").length;
-    const losses = laps.filter((l) => l.outcome === "LOSS").length;
-    const voids = laps.filter((l) => l.outcome === "VOID").length;
-    const shielded = laps.filter((l) => l.shielded).length;
-    const decided = wins + losses;
-    const net = +laps.reduce((s, l) => s + l.pnl, 0).toFixed(2);
-    const bestStreak = laps.reduce((m, l) => Math.max(m, l.streakAfter), 0);
-    return { wins, losses, voids, shielded, decided, net, bestStreak };
-  }, [laps]);
+  const stats = useMemo(() => summarizeTape(laps), [laps]);
 
   const filtered = useMemo(() => {
     const byOutcome =
@@ -98,7 +90,7 @@ export function HistoryScreen() {
     WINS: stats.wins,
     LOSSES: stats.losses,
     VOID: stats.voids,
-    SHIELDED: stats.shielded,
+    SHIELDED: laps.filter((l) => l.shielded).length,
   };
 
   const onExport = (kind: "csv" | "json") => {
@@ -142,15 +134,21 @@ export function HistoryScreen() {
               <TapeStat label="LAPS" value={laps.length} />
               <TapeStat
                 label="WIN RATE"
-                value={stats.decided > 0 ? pct(stats.wins / stats.decided) : "—"}
+                value={
+                  stats.decided > 0
+                    ? `${pct(stats.winRate ?? Number.NaN)} · n=${stats.sampleN}`
+                    : "—"
+                }
               />
               <TapeStat
                 label="NET PNL"
-                value={laps.length === 0 ? "—" : signed(stats.net)}
-                tone={stats.net > 0 ? "lime" : stats.net < 0 ? "ember" : "cream"}
+                value={stats.netPnl == null ? "—" : signed(stats.netPnl)}
+                tone={
+                  stats.netPnl == null ? "cream" : stats.netPnl > 0 ? "lime" : stats.netPnl < 0 ? "ember" : "cream"
+                }
               />
               <TapeStat label="BEST STREAK" value={`×${stats.bestStreak}`} tone="flame" />
-              <TapeStat label="SHIELDED" value={stats.shielded} />
+              <TapeStat label="OPEN" value={stats.open} />
             </dl>
             <div className="flex shrink-0 gap-2 lg:ml-4">
               <button

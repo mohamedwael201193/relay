@@ -1,5 +1,7 @@
 import {
   assertShannonExecution,
+  collateralCostForKind,
+  policyStakeRaw,
   readVaultSnapshot,
   runDoctor,
   runLiveOrder,
@@ -11,6 +13,7 @@ import {
 import {
   claimRunner,
   ensureRunner,
+  listLaps,
   listProof,
   persistWorkerStep,
   releaseRunner,
@@ -19,8 +22,57 @@ import {
 import type { LocalAccount } from "viem/accounts";
 import type { Address, Hex } from "viem";
 
+function streakCurrent(laps: Array<{ state: string }>): number {
+  let run = 0;
+  for (const lap of laps) {
+    if (lap.state === "SETTLED_VOID") continue;
+    if (
+      lap.state === "FILLED" ||
+      lap.state === "ORDER_SUBMITTED" ||
+      lap.state === "PARTIAL_FILL" ||
+      lap.state === "DISCOVERING" ||
+      lap.state === "WAITING_SETTLEMENT"
+    ) {
+      continue;
+    }
+    if (lap.state === "SETTLED_WIN") run += 1;
+    else if (lap.state === "SETTLED_LOSS") run = 0;
+  }
+  return run;
+}
+
 function log(event: string, extra: Record<string, unknown>): void {
   console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...extra }));
+}
+
+function asBias(raw: unknown): "UP" | "DOWN" | "FOLLOW" {
+  const s = String(raw ?? "FOLLOW").trim().toUpperCase();
+  if (s === "UP" || s === "DOWN" || s === "FOLLOW") return s;
+  return "FOLLOW";
+}
+
+function asIntervalSec(raw: unknown): string {
+  const s = String(raw ?? "60").trim();
+  return /^\d+$/.test(s) ? s : "60";
+}
+
+function asAssets(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.map((a) => String(a)).filter(Boolean) : ["BTC", "ETH"];
+}
+
+function kindLabel(kind: unknown): "BUY_YES" | "BUY_NO" {
+  if (kind === 2 || kind === "2" || kind === "BUY_NO") return "BUY_NO";
+  return "BUY_YES";
+}
+
+function kindNumber(kind: unknown): number {
+  return kindLabel(kind) === "BUY_NO" ? 2 : 0;
+}
+
+const SHANNON_UNIT = 1_000_000n;
+
+function entryCostRaw(kind: unknown, price: string, filled: string): string {
+  return collateralCostForKind(kindNumber(kind), BigInt(price), BigInt(filled), SHANNON_UNIT).toString();
 }
 
 export async function reconcileOnce(account: LocalAccount): Promise<{ action: string; runnerId?: string }> {
@@ -67,7 +119,15 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
 
     const proof = await listProof(runner.id);
     const lastOrder = proof.orders.at(-1) as
-      | { market_id: string; fill_class: string; tx_hash: string; lap_index: number }
+      | {
+          market_id: string;
+          fill_class: string;
+          tx_hash: string;
+          lap_index: number;
+          price?: string;
+          filled?: string;
+          kind?: string;
+        }
       | undefined;
     const lastSettle = proof.settlements.at(-1) as { market_id: string; redeem_tx: string | null } | undefined;
 
@@ -95,6 +155,20 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
         marketId: lastOrder.market_id,
         correlationId: `settle:${lastOrder.tx_hash}`,
         state: nextState,
+        entryCost: lastOrder.price && lastOrder.filled
+          ? entryCostRaw(lastOrder.kind, lastOrder.price, lastOrder.filled)
+          : null,
+        redeemValue: (
+          BigInt(settlement.vaultCollateralAfter) - BigInt(settlement.vaultCollateralBefore)
+        ).toString(),
+        pnl:
+          lastOrder.price && lastOrder.filled
+            ? (
+                BigInt(settlement.vaultCollateralAfter) -
+                BigInt(settlement.vaultCollateralBefore) -
+                BigInt(entryCostRaw(lastOrder.kind, lastOrder.price, lastOrder.filled))
+              ).toString()
+            : null,
         settlement: {
           resolved: settlement.resolved,
           voided: settlement.voided,
@@ -116,13 +190,29 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
 
     await go("DISCOVERING");
     const skip = lastOrder?.market_id ? [lastOrder.market_id] : [];
+    const history = await listLaps(runner.id);
+    let targetStakeRaw = 0n;
+    try {
+      targetStakeRaw = policyStakeRaw({
+        vaultBal: BigInt(snap.vaultBal),
+        perWindowCap: BigInt(snap.perWindowCap || snap.vaultBal),
+        streak: streakCurrent(history),
+      });
+    } catch (e) {
+      await go("ERROR", { lastError: (e as Error).message.slice(0, 500) });
+      return { action: "stake_unavailable", runnerId: runner.id };
+    }
     const placed = await runLiveOrder(account, {
-      intervalSec: "60",
-      iocOnly: true,
+      intervalSec: asIntervalSec(runner.interval_sec),
+      bias: asBias(runner.bias),
+      assets: asAssets(runner.assets),
+      iocOnly: false,
       skipMarketIds: skip,
       waitMs: 90_000,
       evidenceName: "shannon-worker-order.json",
       vault,
+      targetStakeRaw,
+      minRemainingFrac: 0.4,
     });
     const attempt = placed.ioc ?? placed.postOnly;
     if (!attempt) {
@@ -131,6 +221,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     }
     const filled = attempt.fillClass === "FILL" || attempt.fillClass === "PARTIAL_FILL";
     const nextIndex = (lastOrder?.lap_index ?? 0) + 1;
+    const kind = kindLabel(attempt.kind);
     await persistWorkerStep({
       runnerId: runner.id,
       vault,
@@ -141,11 +232,15 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       state: filled ? "FILLED" : attempt.placedEvent ? "ORDER_SUBMITTED" : "DISCOVERING",
       asset: placed.asset ?? null,
       intervalSec: placed.intervalSec ?? null,
+      entryCost: filled
+        ? entryCostRaw(kind, attempt.price, attempt.filled)
+        : null,
       order: {
         attemptId: attempt.correlationId,
         txHash: attempt.placeTx,
         orderId: attempt.orderId,
         orderType: attempt.orderType,
+        kind,
         price: attempt.price,
         quantity: attempt.quantity,
         filled: attempt.filled,

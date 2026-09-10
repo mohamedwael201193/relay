@@ -19,7 +19,8 @@ export function BookPanel({ className }: { className?: string }) {
 
   const asks = (side === "UP" ? book.askUp : book.askDown).slice(0, 5);
   const bids = (side === "UP" ? book.bidUp : book.bidDown).slice(0, 5);
-  const maxSize = Math.max(1, ...asks.map((l) => l.size), ...bids.map((l) => l.size));
+  const empty = asks.length === 0 && bids.length === 0;
+  const maxSize = empty ? 0 : Math.max(1, ...asks.map((l) => l.size), ...bids.map((l) => l.size));
 
   return (
     <Panel label={`BOOK · ${side} TERMS`} className={className}>
@@ -50,6 +51,12 @@ export function BookPanel({ className }: { className?: string }) {
         </div>
       </div>
 
+      {empty ? (
+        <div className="px-5 pb-6 pt-4 text-center">
+          <span className="mlabel text-foam/60">NO BOOK DEPTH YET</span>
+        </div>
+      ) : (
+        <>
       {/* desktop / tablet ladder */}
       <div className="px-5 pb-4 pt-2 hidden md:block">
         {[...asks].reverse().map((l, i) => (
@@ -81,6 +88,8 @@ export function BookPanel({ className }: { className?: string }) {
           SPREAD {cents(book.spread)}
         </div>
       </div>
+        </>
+      )}
     </Panel>
   );
 }

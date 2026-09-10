@@ -99,9 +99,11 @@ function LapReceipt({ lap }: { lap: Lap }) {
         <div className="min-w-0">
           <div className="flex items-center justify-between gap-3">
             <span className="mlabel text-foam">ORDER &amp; FILL</span>
-            <span className="mlabel rounded-md border-2 border-limedeep/50 bg-lime/10 px-1.5 py-0.5 text-lime">
-              {lap.order.latencyMs}MS
-            </span>
+            {lap.order.latencyMs > 0 ? (
+              <span className="mlabel rounded-md border-2 border-limedeep/50 bg-lime/10 px-1.5 py-0.5 text-lime">
+                {lap.order.latencyMs}MS
+              </span>
+            ) : null}
           </div>
           <div className="mt-2">
             <MonoRow label="KIND" value={lap.order.kind} />
@@ -112,7 +114,11 @@ function LapReceipt({ lap }: { lap: Lap }) {
             <MonoRow label="PLACED" value={clock(lap.order.placedAt)} tone="foam" />
             <MonoRow
               label="ORDER TX"
-              value={`${shortHash(lap.order.tx.hash)} · #${lap.order.tx.block}`}
+              value={
+                lap.order.tx.block > 0
+                  ? `${shortHash(lap.order.tx.hash)} · #${lap.order.tx.block}`
+                  : shortHash(lap.order.tx.hash)
+              }
               tone="foam"
             />
           </div>

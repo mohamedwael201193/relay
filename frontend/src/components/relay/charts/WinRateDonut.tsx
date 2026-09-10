@@ -161,7 +161,9 @@ export function WinRateDonut({ wins, losses, voids, ariaSummary, className }: Pr
                 <span className="data mt-2 text-[0.65rem] text-foam">
                   {wins}W · {losses}L · {voids}V
                 </span>
-                <span className="mlabel mt-1.5 text-foam/50">DECIDED = W + L</span>
+                <span className="mlabel mt-1.5 text-foam/50">
+                  {decided > 0 ? `n=${decided} DECIDED = W + L` : "DECIDED = W + L"}
+                </span>
               </div>
             </div>
 

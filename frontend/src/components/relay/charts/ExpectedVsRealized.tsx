@@ -21,9 +21,10 @@ interface Props {
 }
 
 export function ExpectedVsRealized({ expected, realized, laps, ariaSummary, className }: Props) {
-  const ratio = expected > 0 ? realized / expected : 0;
-  const clamped = Math.min(ratio, 2);
-  const above = ratio >= 1;
+  const ratio =
+    Number.isFinite(expected) && Math.abs(expected) > 1e-12 ? realized / expected : null;
+  const clamped = ratio == null ? 0 : Math.min(Math.max(ratio, 0), 2);
+  const above = (ratio ?? 0) >= 1;
   /** position on the 0×..2× scale, as a fraction of the track */
   const pos = Math.max(0, Math.min(1, clamped / 2));
 
@@ -33,7 +34,7 @@ export function ExpectedVsRealized({ expected, realized, laps, ariaSummary, clas
       className={className}
       legend={
         <span className="data text-[0.62rem] text-foam/60">
-          model edge is a stand-in — fills and receipts are Shannon
+          fair-coin expected (0.5×qty − stake) — not a claimed edge
         </span>
       }
     >
@@ -46,10 +47,10 @@ export function ExpectedVsRealized({ expected, realized, laps, ariaSummary, clas
             <div>
               <div className="mlabel text-foam/70">EXPECTED / LAP</div>
               <div className="data mt-1.5 text-3xl font-semibold leading-none text-cream">
-                {money(expected)}
+                {Number.isFinite(expected) ? money(expected) : "—"}
               </div>
               <div className="data mt-1.5 text-[0.6rem] text-foam/60">
-                MEAN STAKE × 2.1% MODEL EDGE
+                FAIR-COIN 0.5×QTY − STAKE
               </div>
             </div>
             <div>
@@ -58,7 +59,7 @@ export function ExpectedVsRealized({ expected, realized, laps, ariaSummary, clas
                 className="data mt-1.5 text-3xl font-semibold leading-none"
                 style={{ color: realized > 0 ? CH.lime : realized < 0 ? CH.ember : CH.foam }}
               >
-                {money(realized, { sign: true })}
+                {Number.isFinite(realized) ? money(realized, { sign: true }) : "—"}
               </div>
               <div className="data mt-1.5 text-[0.6rem] text-foam/60">
                 MEAN NET PNL — FROM THE TAPE
@@ -74,8 +75,12 @@ export function ExpectedVsRealized({ expected, realized, laps, ariaSummary, clas
                 className="data text-sm font-semibold"
                 style={{ color: above ? CH.lime : CH.ember }}
               >
-                {ratio >= 100 ? `${ratio.toFixed(0)}×` : `${ratio.toFixed(1)}×`}
-                {ratio > 2 ? " (CLAMPED)" : ""}
+                {ratio == null
+                  ? "—"
+                  : ratio >= 100
+                    ? `${ratio.toFixed(0)}×`
+                    : `${ratio.toFixed(1)}×`}
+                {ratio != null && ratio > 2 ? " (CLAMPED)" : ""}
               </span>
             </div>
             <div className="relative mt-2.5 h-3.5 rounded-full border-2 border-lined bg-panel2/70">
@@ -121,7 +126,7 @@ export function ExpectedVsRealized({ expected, realized, laps, ariaSummary, clas
           <div className="mt-4 border-t-2 border-lined/70 pt-3">
             <div className="data text-[0.65rem] leading-relaxed text-foam/70">
               Over {laps} settled lap{laps === 1 ? "" : "s"} the tape {above ? "ran ahead of" : "trailed"} the
-              model edge — which is a stand-in number here. The receipts are not.
+              fair-coin expected — a stand-in, not a claimed edge. The receipts are not.
             </div>
           </div>
         </div>

@@ -10,7 +10,13 @@ export type RunnerRow = {
   last_error: string | null;
   last_market_id: string | null;
   lap_index: number;
+  bias: string;
+  interval_sec: string;
+  assets: string[];
 };
+
+const RUNNER_COLS =
+  "id, vault, owner, operator, state, chain_id, last_error, last_market_id, lap_index, bias, interval_sec, assets";
 
 export async function ensureRunner(input: {
   vault: string;
@@ -25,9 +31,29 @@ export async function ensureRunner(input: {
        VALUES ($1, $2, $3, 'FUNDED', $4)
        ON CONFLICT (chain_id, vault)
        DO UPDATE SET owner = EXCLUDED.owner, operator = EXCLUDED.operator, updated_at = now()
-       RETURNING id, vault, owner, operator, state, chain_id, last_error, last_market_id, lap_index`,
+       RETURNING ${RUNNER_COLS}`,
       [input.vault, input.owner, input.operator, chainId],
     );
+    return row.rows[0];
+  });
+}
+
+export async function updateRunnerPolicy(
+  id: string,
+  policy: { bias?: string; intervalSec?: string; assets?: string[] },
+): Promise<RunnerRow> {
+  return withPool(async (c) => {
+    const row = await c.query<RunnerRow>(
+      `UPDATE runners
+       SET bias = COALESCE($2, bias),
+           interval_sec = COALESCE($3, interval_sec),
+           assets = COALESCE($4, assets),
+           updated_at = now()
+       WHERE id = $1
+       RETURNING ${RUNNER_COLS}`,
+      [id, policy.bias ?? null, policy.intervalSec ?? null, policy.assets ?? null],
+    );
+    if (!row.rows[0]) throw new Error(`runner ${id} not found`);
     return row.rows[0];
   });
 }
@@ -63,7 +89,7 @@ export async function claimRunner(vault?: string): Promise<RunnerRow | null> {
          FOR UPDATE SKIP LOCKED
          LIMIT 1
        )
-       RETURNING id, vault, owner, operator, state, chain_id, last_error, last_market_id, lap_index`,
+       RETURNING ${RUNNER_COLS}`,
       [vault ?? null, [...CLAIMABLE_STATES]],
     );
     return row.rows[0] ?? null;
@@ -98,7 +124,7 @@ export async function setRunnerState(
 export async function listRunnersByOwner(owner: string): Promise<RunnerRow[]> {
   return withPool(async (c) => {
     const r = await c.query<RunnerRow>(
-      `SELECT id, vault, owner, operator, state, chain_id, last_error, last_market_id, lap_index
+      `SELECT ${RUNNER_COLS}
        FROM runners WHERE lower(owner) = lower($1)
        ORDER BY updated_at DESC`,
       [owner],
@@ -110,7 +136,7 @@ export async function listRunnersByOwner(owner: string): Promise<RunnerRow[]> {
 export async function getRunnerByVault(vault: string): Promise<RunnerRow | null> {
   return withPool(async (c) => {
     const r = await c.query<RunnerRow>(
-      `SELECT id, vault, owner, operator, state, chain_id, last_error, last_market_id, lap_index
+      `SELECT ${RUNNER_COLS}
        FROM runners WHERE lower(vault) = lower($1)`,
       [vault],
     );
@@ -121,7 +147,7 @@ export async function getRunnerByVault(vault: string): Promise<RunnerRow | null>
 export async function listLaps(runnerId: string) {
   return withPool(async (c) => {
     const r = await c.query(
-      `SELECT id, lap_index, market_id, pool, state, correlation_id, created_at, asset, interval_sec
+      `SELECT id, lap_index, market_id, pool, state, correlation_id, created_at, asset, interval_sec, entry_cost, redeem_value, pnl
        FROM laps WHERE runner_id = $1 ORDER BY lap_index ASC`,
       [runnerId],
     );
@@ -132,7 +158,7 @@ export async function listLaps(runnerId: string) {
 export async function listProof(runnerId: string) {
   return withPool(async (c) => {
     const orders = await c.query(
-      `SELECT o.attempt_id, o.tx_hash, o.fill_class, o.filled, o.receipt_status, o.price, o.quantity, o.created_at, l.market_id, l.lap_index
+      `SELECT o.attempt_id, o.tx_hash, o.fill_class, o.filled, o.receipt_status, o.price, o.quantity, o.order_type, o.kind, o.created_at, l.market_id, l.lap_index
        FROM orders o JOIN laps l ON l.id = o.lap_id
        WHERE l.runner_id = $1 ORDER BY o.created_at ASC`,
       [runnerId],
@@ -162,11 +188,15 @@ export async function persistWorkerStep(input: {
   state: string;
   asset?: string | null;
   intervalSec?: string | null;
+  entryCost?: string | null;
+  redeemValue?: string | null;
+  pnl?: string | null;
   order?: {
     attemptId: string;
     txHash: string;
     orderId: string | null;
     orderType: number;
+    kind?: string;
     price: string;
     quantity: string;
     filled: string;
@@ -182,15 +212,18 @@ export async function persistWorkerStep(input: {
 }): Promise<void> {
   await withPool(async (c) => {
     const lap = await c.query<{ id: string }>(
-      `INSERT INTO laps (runner_id, lap_index, market_id, pool, state, correlation_id, asset, interval_sec)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `INSERT INTO laps (runner_id, lap_index, market_id, pool, state, correlation_id, asset, interval_sec, entry_cost, redeem_value, pnl)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT (runner_id, lap_index)
        DO UPDATE SET
          market_id = EXCLUDED.market_id,
          state = EXCLUDED.state,
          correlation_id = EXCLUDED.correlation_id,
          asset = COALESCE(EXCLUDED.asset, laps.asset),
-         interval_sec = COALESCE(EXCLUDED.interval_sec, laps.interval_sec)
+         interval_sec = COALESCE(EXCLUDED.interval_sec, laps.interval_sec),
+         entry_cost = COALESCE(EXCLUDED.entry_cost, laps.entry_cost),
+         redeem_value = COALESCE(EXCLUDED.redeem_value, laps.redeem_value),
+         pnl = COALESCE(EXCLUDED.pnl, laps.pnl)
        RETURNING id`,
       [
         input.runnerId,
@@ -201,20 +234,28 @@ export async function persistWorkerStep(input: {
         input.correlationId,
         input.asset ?? null,
         input.intervalSec ?? null,
+        input.entryCost ?? null,
+        input.redeemValue ?? null,
+        input.pnl ?? null,
       ],
     );
     const lapId = lap.rows[0].id;
     if (input.order) {
       await c.query(
-        `INSERT INTO orders (lap_id, attempt_id, tx_hash, order_id, order_type, price, quantity, filled, fill_class, receipt_status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-         ON CONFLICT (attempt_id) DO UPDATE SET fill_class = EXCLUDED.fill_class, filled = EXCLUDED.filled, tx_hash = EXCLUDED.tx_hash`,
+        `INSERT INTO orders (lap_id, attempt_id, tx_hash, order_id, order_type, kind, price, quantity, filled, fill_class, receipt_status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT (attempt_id) DO UPDATE SET
+           fill_class = EXCLUDED.fill_class,
+           filled = EXCLUDED.filled,
+           tx_hash = EXCLUDED.tx_hash,
+           kind = COALESCE(EXCLUDED.kind, orders.kind)`,
         [
           lapId,
           input.order.attemptId,
           input.order.txHash,
           input.order.orderId,
           input.order.orderType,
+          input.order.kind ?? null,
           input.order.price,
           input.order.quantity,
           input.order.filled,
@@ -226,7 +267,12 @@ export async function persistWorkerStep(input: {
     if (input.settlement) {
       await c.query(
         `INSERT INTO settlements (lap_id, market_id, resolved, voided, payout_numerators, redeem_tx)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (lap_id) DO UPDATE SET
+           resolved = EXCLUDED.resolved,
+           voided = EXCLUDED.voided,
+           payout_numerators = EXCLUDED.payout_numerators,
+           redeem_tx = COALESCE(EXCLUDED.redeem_tx, settlements.redeem_tx)`,
         [
           lapId,
           input.marketId,
@@ -251,6 +297,7 @@ export async function persistWorkerStep(input: {
           marketId: input.marketId,
           asset: input.asset ?? null,
           intervalSec: input.intervalSec ?? null,
+          kind: input.order?.kind ?? null,
         }),
       ],
     );

@@ -133,7 +133,9 @@ export const useRelay = create<RelayStore>((set, get) => ({
 }));
 
 export function selectPnl(s: { bankroll: number; startBankroll: number; laps: Lap[] }) {
-  const realized = +(s.bankroll - s.startBankroll).toFixed(2);
+  const realized = s.laps
+    .filter((l) => l.outcome === "WIN" || l.outcome === "LOSS" || l.outcome === "VOID")
+    .reduce((a, l) => a + l.pnl, 0);
   let b = s.startBankroll;
   let peak = s.startBankroll;
   for (const l of s.laps) {
@@ -146,15 +148,15 @@ export function selectPnl(s: { bankroll: number; startBankroll: number; laps: La
     today: realized,
     bankroll: s.bankroll,
     startBankroll: s.startBankroll,
-    peakBankroll: +peak.toFixed(2),
-    drawdown: +(peak - s.bankroll).toFixed(2),
+    peakBankroll: peak,
+    drawdown: peak - s.bankroll,
   };
 }
 
 export function selectLivePnl(live: LiveLap | null): number {
   if (!live?.position) return 0;
   const mark = live.position.side === "UP" ? live.probUp : 1 - live.probUp;
-  return +(live.position.quantity * mark - live.position.stake).toFixed(2);
+  return live.position.quantity * mark - live.position.stake;
 }
 
 export function selectNextStake(bankroll: number, streak: number, cfg: RunnerConfig): number {

@@ -12,6 +12,7 @@ import { useMemo } from "react";
 import { MotionConfig } from "framer-motion";
 import { selectNextStake, useRelay } from "@/lib/relay/engine/store";
 import { money } from "@/lib/relay/format";
+import { expectedFairPerLap, summarizeTape } from "@/lib/relay/analytics";
 import { FlameMark } from "../identity/identity";
 import {
   BankrollChart,
@@ -38,13 +39,7 @@ export function AnalyticsScreen() {
 
   const asc = useMemo(() => [...laps].sort((a, b) => a.number - b.number), [laps]);
 
-  const counts = useMemo(() => {
-    const wins = asc.filter((l) => l.outcome === "WIN").length;
-    const losses = asc.filter((l) => l.outcome === "LOSS").length;
-    const voids = asc.filter((l) => l.outcome === "VOID").length;
-    const open = asc.filter((l) => l.outcome === "OPEN").length;
-    return { wins, losses, voids, open, decided: wins + losses };
-  }, [asc]);
+  const counts = useMemo(() => summarizeTape(asc), [asc]);
 
   const bankrollPoints = useMemo<BankrollPoint[]>(() => {
     const pts: BankrollPoint[] = [
@@ -52,7 +47,7 @@ export function AnalyticsScreen() {
     ];
     let b = startBankroll;
     for (const l of asc) {
-      b = +(b + l.pnl).toFixed(2);
+      b = b + l.pnl;
       pts.push({
         lap: l.number,
         bankroll: b,
@@ -72,7 +67,7 @@ export function AnalyticsScreen() {
         const ls = asc.filter((l) => l.market.asset === asset);
         const wins = ls.filter((l) => l.outcome === "WIN").length;
         const losses = ls.filter((l) => l.outcome === "LOSS").length;
-        const pnl = +ls.reduce((s, l) => s + l.pnl, 0).toFixed(2);
+        const pnl = ls.reduce((s, l) => s + l.pnl, 0);
         const decided = wins + losses;
         return {
           asset,
@@ -80,7 +75,7 @@ export function AnalyticsScreen() {
           laps: ls.length,
           wins,
           losses,
-          winRate: decided > 0 ? wins / decided : 0,
+          winRate: decided > 0 ? wins / decided : Number.NaN,
         };
       })
       .filter((lane) => lane.laps > 0);
@@ -104,30 +99,29 @@ export function AnalyticsScreen() {
       peak = Math.max(peak, p.bankroll);
       maxDD = Math.max(maxDD, peak - p.bankroll);
     }
-    peak = +peak.toFixed(2);
-    const pnls = asc.map((l) => l.pnl);
-    const mean = pnls.reduce((s, p) => s + p, 0) / Math.max(1, pnls.length);
+    const closedPnls = asc.filter((l) => l.outcome !== "OPEN").map((l) => l.pnl);
+    const mean = closedPnls.length ? closedPnls.reduce((s, p) => s + p, 0) / closedPnls.length : 0;
     const variance =
-      pnls.length > 1
-        ? pnls.reduce((s, p) => s + (p - mean) ** 2, 0) / (pnls.length - 1)
+      closedPnls.length > 1
+        ? closedPnls.reduce((s, p) => s + (p - mean) ** 2, 0) / (closedPnls.length - 1)
         : 0;
     const sd = Math.sqrt(variance);
     return {
       peak,
-      maxDrawdown: +maxDD.toFixed(2),
+      maxDrawdown: maxDD,
       maxDrawdownPct: peak > 0 ? maxDD / peak : 0,
-      drawdownNow: +Math.max(0, peak - bankroll).toFixed(2),
-      sharpe: sd > 0 ? +(mean / sd).toFixed(4) : 0,
-      nextStake: +selectNextStake(bankroll, streak.current, config).toFixed(2),
+      drawdownNow: Math.max(0, peak - bankroll),
+      sharpe: sd > 0 ? mean / sd : 0,
+      nextStake: selectNextStake(bankroll, streak.current, config),
     };
   }, [asc, bankrollPoints, startBankroll, bankroll, streak.current, config]);
 
   const calib = useMemo(() => {
-    if (asc.length === 0) return { expected: 0, realized: 0 };
-    const meanStake = asc.reduce((s, l) => s + l.stake, 0) / asc.length;
-    const meanPnl = asc.reduce((s, l) => s + l.pnl, 0) / asc.length;
-    return { expected: +(meanStake * 0.021).toFixed(2), realized: +meanPnl.toFixed(2) };
-  }, [asc]);
+    return {
+      expected: expectedFairPerLap(asc),
+      realized: counts.averageRealizedReturn,
+    };
+  }, [asc, counts]);
 
   const hourBuckets = useMemo(() => {
     if (asc.length === 0) return [];
@@ -148,7 +142,7 @@ export function AnalyticsScreen() {
   }, [asc]);
   const bestStreak = streakSteps.reduce((m, s) => Math.max(m, s.streak), 0);
   const lastLap = asc[asc.length - 1]?.number ?? 0;
-  const netTape = +asc.reduce((s, l) => s + l.pnl, 0).toFixed(2);
+  const netTape = counts.netPnl;
   const decided = counts.decided;
 
   return (
@@ -201,8 +195,8 @@ export function AnalyticsScreen() {
             voids={counts.voids}
             ariaSummary={
               decided > 0
-                ? `Win rate ${Math.round((counts.wins / decided) * 1000) / 10}% over ${decided} decided laps — ${counts.wins} wins, ${counts.losses} losses, ${counts.voids} void.`
-                : "No decided laps yet."
+                ? `Win rate ${Math.round((counts.wins / decided) * 1000) / 10}% (n=${counts.sampleN}) — ${counts.wins} wins, ${counts.losses} losses, ${counts.voids} void, ${counts.open} open.`
+                : "Win rate — (n=0 decided laps)."
             }
           />
 
@@ -231,16 +225,20 @@ export function AnalyticsScreen() {
           />
 
           <ExpectedVsRealized
-            expected={calib.expected}
-            realized={calib.realized}
-            laps={asc.length}
-            ariaSummary={`Expected ${money(calib.expected)} per lap versus realized ${money(
-              calib.realized
-            )} per lap over ${asc.length} laps.`}
+            expected={calib.expected ?? Number.NaN}
+            realized={calib.realized ?? Number.NaN}
+            laps={counts.sampleN}
+            ariaSummary={
+              calib.expected == null || calib.realized == null
+                ? "Calibration — (n=0 decided laps)."
+                : `Fair-coin expected ${money(calib.expected)} per lap versus realized ${money(
+                    calib.realized
+                  )} per lap (n=${counts.sampleN}).`
+            }
           />
 
           <RiskPanel
-            laps={asc.length}
+            laps={decided}
             maxDrawdown={risk.maxDrawdown}
             maxDrawdownPct={risk.maxDrawdownPct}
             peak={risk.peak}
@@ -249,9 +247,15 @@ export function AnalyticsScreen() {
             nextStake={risk.nextStake}
             nextLap={liveLap ? liveLap.number : lastLap > 0 ? lastLap + 1 : null}
             streak={streak.current}
-            ariaSummary={`Max drawdown ${money(-risk.maxDrawdown)}, ${
-              Math.round(risk.maxDrawdownPct * 1000) / 10
-            }% of the ${money(risk.peak)} peak. Tape net ${money(netTape, { sign: true })}.`}
+            ariaSummary={
+              decided === 0
+                ? "Risk — (n=0 decided laps)."
+                : `Max drawdown ${money(-risk.maxDrawdown)}, ${
+                    Math.round(risk.maxDrawdownPct * 1000) / 10
+                  }% of the ${money(risk.peak)} peak. Tape net ${
+                    netTape == null ? "—" : money(netTape, { sign: true })
+                  }.`
+            }
           />
         </div>
       </div>

@@ -93,7 +93,13 @@ export const relayApi = {
   proof: (vault: string) => request<{ runner: RunnerRow; proof: ProofBundle }>(`/v1/runners/${vault}/proof`),
   register: (vault: string, auth: OwnerAuth) =>
     request<{ runner: RunnerRow }>("/v1/runners", { method: "POST", body: JSON.stringify({ vault, ...auth }) }),
-  provision: (auth: OwnerAuth & { budget: number; stopLoss: number }) =>
+  provision: (auth: OwnerAuth & {
+    budget: number;
+    stopLoss: number;
+    bias?: string;
+    cadence?: string;
+    assets?: string[];
+  }) =>
     request<{ runner: RunnerRow; deployTx: string; vault: string }>("/v1/runners/provision", {
       method: "POST",
       body: JSON.stringify(auth),
@@ -135,6 +141,16 @@ export type ArenaRow = {
   owner: string;
   state: string;
   verified_laps: string | number;
+  wins?: string | number;
+  losses?: string | number;
+  voids?: string | number;
+  open?: string | number;
+  decided?: string | number;
+  win_rate?: string | number | null;
+  pnl_raw?: string | number | null;
+  pnl_7d_raw?: string | number | null;
+  streak?: string | number;
+  best_streak?: string | number;
 };
 
 export type HistoryLap = {
@@ -147,6 +163,9 @@ export type HistoryLap = {
   created_at: string;
   asset?: string | null;
   interval_sec?: string | null;
+  entry_cost?: string | null;
+  redeem_value?: string | null;
+  pnl?: string | null;
 };
 
 export type ProofBundle = {
@@ -159,6 +178,7 @@ export type ProofBundle = {
     created_at: string;
     price?: string;
     quantity?: string;
+    kind?: string | number | null;
   }>;
   settlements: Array<{
     market_id: string;

@@ -146,6 +146,16 @@ contract RunnerVaultTest is Test {
         assertEq(pool.calls(), 1);
     }
 
+    function test_cancelLast_releases_outstanding() public {
+        _arm(0, 500_000, 1_000_000);
+        vm.prank(operator);
+        vault.placeArmed();
+        assertGt(vault.outstandingNotional(), 0);
+        vm.prank(operator);
+        vault.cancelLast();
+        assertEq(vault.outstandingNotional(), 0);
+    }
+
     function test_callback_spoof_reverts() public {
         _arm(0, 500_000, 1_000_000);
         vm.prank(stranger);

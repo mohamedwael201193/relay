@@ -9,6 +9,7 @@ import {
   EXPECTED_SHANNON_DECIMALS,
   SHANNON_ADDRESSES,
   SHANNON_CHAIN_ID,
+  aggregateArena,
   deployOwnedVault,
   loadEnv,
   loadShannonDeployment,
@@ -26,6 +27,7 @@ import {
   listRunnersByOwner,
   pingDb,
   setRunnerState,
+  updateRunnerPolicy,
   withPool,
 } from "@relay/db";
 import { applyCors, parseCorsOrigins } from "./cors.js";
@@ -70,6 +72,34 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   const parsed: unknown = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
   return parsed as Record<string, unknown>;
+}
+
+const CADENCE_SEC: Record<string, string> = { "1m": "60", "5m": "300", "15m": "900", "1h": "3600" };
+
+function parseBias(raw: unknown): "UP" | "DOWN" | "FOLLOW" {
+  const s = String(raw ?? "FOLLOW").trim().toUpperCase();
+  if (s === "UP" || s === "DOWN" || s === "FOLLOW") return s;
+  return "FOLLOW";
+}
+
+function parseCadence(body: Record<string, unknown>): string {
+  const raw = body.intervalSec ?? body.cadence;
+  if (raw == null || raw === "") return "60";
+  const v = String(raw).trim();
+  if (CADENCE_SEC[v]) return CADENCE_SEC[v];
+  if (/^\d+$/.test(v)) return v;
+  return "60";
+}
+
+function parseAssets(body: Record<string, unknown>): string[] {
+  if (body.assets === undefined) return ["BTC", "ETH"];
+  if (Array.isArray(body.assets)) {
+    return body.assets.map((a) => String(a).trim()).filter(Boolean);
+  }
+  if (typeof body.assets === "string") {
+    return body.assets.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  return ["BTC", "ETH"];
 }
 
 async function requireOwner(
@@ -146,20 +176,25 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
         return;
       }
       if (url.pathname === "/v1/arena") {
-        const rows = await withPool(async (c) => {
+        const joinRows = await withPool(async (c) => {
           const r = await c.query(
-            `SELECT r.vault, r.owner, r.state, COUNT(s.id) FILTER (WHERE s.resolved AND NOT s.voided) AS verified_laps
+            `SELECT r.vault, r.owner, r.state, l.state AS lap_state, l.pnl, l.created_at
              FROM runners r
              LEFT JOIN laps l ON l.runner_id = r.id
-             LEFT JOIN settlements s ON s.lap_id = l.id
-             GROUP BY r.vault, r.owner, r.state
-             ORDER BY verified_laps DESC`,
+             ORDER BY r.vault, l.lap_index ASC NULLS LAST`,
           );
-          return r.rows;
+          return r.rows as Array<{
+            vault: string;
+            owner: string;
+            state: string;
+            lap_state: string | null;
+            pnl: string | null;
+            created_at: string | null;
+          }>;
         });
         json(res, 200, {
-          runners: rows,
-          note: "verified_laps count settlement rows only; streak is not inferred; no synthetic followers",
+          runners: aggregateArena(joinRows),
+          note: "win_rate = wins/(wins+losses); voids and open excluded; pnl is verified tape; no synthetic followers",
         });
         return;
       }
@@ -230,8 +265,8 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
           return;
         }
         const budgetUsd = Math.max(1, Number(body.budget) || 100);
-        const stopUsd = Math.max(1, Number(body.stopLoss) || 30);
-        const unit = 1_000_000n;
+        const stopRaw = Number(body.stop ?? body.stopLoss);
+        const stopUsd = Math.min(Math.max(1, Number.isFinite(stopRaw) && stopRaw > 0 ? stopRaw : 30), budgetUsd);
         const created = await deployOwnedVault(privateKeyToAccount(key), auth.owner, {
           budget: BigInt(Math.round(budgetUsd * 1e6)),
           perWindowCap: BigInt(Math.round(budgetUsd * 1e6)),
@@ -243,7 +278,12 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
           owner: auth.owner,
           operator: "0x0000000000000000000000000000000000000000",
         });
-        json(res, 200, { runner: row, deployTx: created.tx, vault: created.vault });
+        const policy = await updateRunnerPolicy(row.id, {
+          bias: parseBias(body.bias),
+          intervalSec: parseCadence(body),
+          assets: parseAssets(body),
+        });
+        json(res, 200, { runner: policy, deployTx: created.tx, vault: created.vault });
         return;
       }
       if (url.pathname.startsWith("/v1/runners/")) {

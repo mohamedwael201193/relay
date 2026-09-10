@@ -31,9 +31,11 @@ import {
   calendarFromMarkets,
   lapsFromHistory,
   liveLapFromState,
+  notificationsFromLaps,
   runnerFromRow,
   streakFromHistory,
 } from "@/lib/relay/live/apply";
+import { resultFromLap } from "@/lib/relay/analytics";
 
 type EthereumProvider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
 type ConnectedWallet = {
@@ -175,6 +177,16 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
   }
   if (onchainKilled) row = { ...row, state: "KILLED" };
   const streak = streakFromHistory(historyLaps);
+  const mappedLaps = lapsFromHistory(historyLaps, proofBundle, marketsRows);
+  const lastSettled = [...mappedLaps].reverse().find((l) => l.outcome !== "OPEN");
+  const builtResult = lastSettled ? resultFromLap(lastSettled, vaultBal) : null;
+  const prev = useRelay.getState();
+  const isNewResult =
+    Boolean(builtResult) &&
+    (!prev.lastResult ||
+      prev.lastResult.lap !== builtResult!.lap ||
+      prev.lastResult.outcome !== builtResult!.outcome);
+  const lapNotes = isNewResult ? notificationsFromLaps(prev.laps, mappedLaps) : [];
   useRelay.setState({
     vaultAddress: vault,
     backendState: row.state,
@@ -182,16 +194,24 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     runner: runnerFromRow(row, useRelay.getState().runner?.name ?? "Runner", cfg),
     liveLap: liveLapFromState({ row, markets: marketsRows, proof: proofBundle, now }),
     calendar: calendarFromMarkets(marketsRows, now),
-    laps: lapsFromHistory(historyLaps, proofBundle, marketsRows),
+    laps: mappedLaps,
     arena: arenaFromRows(arena.runners ?? [], vault),
     bankroll: vaultBal,
-    startBankroll: Math.max(useRelay.getState().startBankroll, vaultBal),
+    startBankroll: useRelay.getState().startBankroll > 0 ? useRelay.getState().startBankroll : vaultBal,
     peakBankroll: Math.max(useRelay.getState().peakBankroll, vaultBal),
     streak: {
-      ...useRelay.getState().streak,
       current: streak.current,
       best: Math.max(useRelay.getState().streak.best, streak.best),
+      shields: 0,
+      shieldsMax: 0,
+      nextShield: 0,
+      protectedCount: 0,
     },
+    lastResult: builtResult,
+    resultSeen: isNewResult ? false : prev.resultSeen,
+    notifications: lapNotes.length
+      ? [...lapNotes, ...prev.notifications.filter((n) => !lapNotes.some((x) => x.id === n.id))].slice(0, 40)
+      : prev.notifications,
     now,
   });
 }
@@ -350,7 +370,14 @@ export function LiveBridge() {
           if (!vault) {
             phase("Creating vault", "signing");
             const auth = await signAction("provision", "new", owner, walletClient);
-            const created = await relayApi.provision({ ...auth, budget: cfg.budget, stopLoss: cfg.stopLoss });
+            const created = await relayApi.provision({
+              ...auth,
+              budget: cfg.budget,
+              stopLoss: cfg.stopLoss,
+              bias: cfg.bias,
+              cadence: cfg.cadence,
+              assets: cfg.assets,
+            });
             vault = created.vault;
           }
           const vaultAddr = vault as Address;
@@ -387,12 +414,13 @@ export function LiveBridge() {
               });
             }
             if (currentBudget !== unit) {
+              const daily = stop < unit ? stop : unit;
               await send(walletClient, publicClient, {
                 to: vaultAddr,
                 data: encodeFunctionData({
                   abi: vaultWriteAbi,
                   functionName: "setCaps",
-                  args: [unit, unit, stop, unit],
+                  args: [unit, unit, daily, unit],
                 }),
               });
             }

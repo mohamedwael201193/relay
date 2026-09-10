@@ -10,5 +10,6 @@ export {
   persistWorkerStep,
   releaseRunner,
   setRunnerState,
+  updateRunnerPolicy,
   type RunnerRow,
 } from "./lease.js";

@@ -18,8 +18,8 @@ export {
   writeEvidence,
   runVaultFunding,
 } from "./vaultOps.js";
-export { runLiveOrder, runLiveOrderFromKey } from "./execute.js";
-export { discoverLiveMarket, normalizeExpireNs, intervalMatches } from "./discover.js";
+export { runLiveOrder, runLiveOrderFromKey, type RunnerBias } from "./execute.js";
+export { discoverLiveMarket, normalizeExpireNs, intervalMatches, assetMatches } from "./discover.js";
 export { assertShannonExecution, mainnetTradingEnabled, protocolChecksFailed } from "./gates.js";
 export {
   pickOwner,
@@ -32,5 +32,22 @@ export {
 export { runReactivityProbe } from "./reactivityProbe.js";
 export { runGoldE2e } from "./goldE2e.js";
 export { settleFilledMarket, settleFilledMarketFromKey } from "./settle.js";
-export { classifyFill, snapQuantity } from "./quant.js";
+export {
+  classifyFill,
+  snapQuantity,
+  collateralCost,
+  collateralCostForKind,
+  quantityForStake,
+  policyStakeRaw,
+} from "./quant.js";
+export {
+  summarizeLaps,
+  streakFromOutcomes,
+  expectedFairPnl,
+  aggregateArena,
+  outcomeFromState,
+  type AnalyticsLap,
+  type RunnerAnalytics,
+  type ArenaAggRow,
+} from "./analytics.js";
 export { canTransition, assertTransition, shortestPath, RUNNER_STATES, type RunnerState } from "./state.js";

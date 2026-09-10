@@ -107,7 +107,7 @@ export function PnlByAsset({ lanes, ariaSummary, className }: Props) {
                       <AssetIcon asset={lane.asset} size={20} />
                       <span className="text-sm font-bold">{lane.asset}</span>
                       <span className="mlabel text-foam/70">
-                        {lane.laps} LAPS · {pct(lane.winRate, 0)} WIN
+                        {lane.laps} LAPS · {Number.isFinite(lane.winRate) ? pct(lane.winRate, 0) : "—"} WIN
                       </span>
                     </div>
                     <span
@@ -158,7 +158,7 @@ export function PnlByAsset({ lanes, ariaSummary, className }: Props) {
                 lines={[
                   { k: "LAPS", v: hovered.laps },
                   { k: "W / L", v: `${hovered.wins} / ${hovered.losses}` },
-                  { k: "WIN RATE", v: pct(hovered.winRate) },
+                  { k: "WIN RATE", v: Number.isFinite(hovered.winRate) ? pct(hovered.winRate) : "—" },
                   {
                     k: "NET PNL",
                     v: signed(hovered.pnl),

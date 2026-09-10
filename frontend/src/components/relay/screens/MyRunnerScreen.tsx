@@ -24,6 +24,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { selectLivePnl, selectNextStake, selectPnl, useRelay } from "@/lib/relay/engine/store";
 import { isOpsVault } from "@/lib/relay/config/network";
+import { isLiveMode } from "@/lib/relay/live/mode";
 import type { Lap, LiveLap, Runner, RunnerStatus } from "@/lib/relay/types";
 import {
   cents,
@@ -617,6 +618,8 @@ function BankrollPanel() {
 
 function StreakPanel() {
   const streak = useRelay((s) => s.streak);
+  const live = isLiveMode();
+  const shieldsHeld = live ? 0 : streak.shields;
   return (
     <Panel label="STREAK">
       <div className="flex flex-col gap-4 px-5 pb-5 pt-3">
@@ -629,32 +632,36 @@ function StreakPanel() {
         </div>
         <div className="flex items-center gap-2">
           {Array.from({ length: streak.shieldsMax }, (_, i) => (
-            <ShieldMark key={i} filled={i < streak.shields} className="h-6 w-auto" />
+            <ShieldMark key={i} filled={i < shieldsHeld} className="h-6 w-auto" />
           ))}
           <span className="mlabel ml-1 text-foam/80">
-            {streak.shields}/{streak.shieldsMax} HELD
+            {live ? "SHIELDS NOT ON-CHAIN YET" : `${streak.shields}/${streak.shieldsMax} HELD`}
           </span>
         </div>
-        <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <span className="mlabel text-foam">NEXT SHIELD</span>
-            <span className="data text-sm text-lime">
-              {Math.round(streak.nextShield * 100)}%
-            </span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-lined">
-            <div
-              className="h-full rounded-full bg-lime"
-              style={{
-                width: `${Math.round(streak.nextShield * 100)}%`,
-                transition: "width 400ms",
-              }}
-            />
-          </div>
-        </div>
-        <div className="mlabel text-foam">
-          PROTECTED {streak.protectedCount} LOSS{streak.protectedCount === 1 ? "" : "ES"}
-        </div>
+        {!live && (
+          <>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="mlabel text-foam">NEXT SHIELD</span>
+                <span className="data text-sm text-lime">
+                  {Math.round(streak.nextShield * 100)}%
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-lined">
+                <div
+                  className="h-full rounded-full bg-lime"
+                  style={{
+                    width: `${Math.round(streak.nextShield * 100)}%`,
+                    transition: "width 400ms",
+                  }}
+                />
+              </div>
+            </div>
+            <div className="mlabel text-foam">
+              PROTECTED {streak.protectedCount} LOSS{streak.protectedCount === 1 ? "" : "ES"}
+            </div>
+          </>
+        )}
       </div>
     </Panel>
   );
@@ -814,7 +821,7 @@ function RecentLaps() {
             </div>
             <div className="ml-auto shrink-0 text-right">
               <span className="data text-sm text-cream">
-                {laps.length} LAPS · {decided > 0 ? pct(rate, 1) : "0.0%"} WIN
+                {laps.length} LAPS · {decided > 0 ? pct(rate, 1) : "—"} WIN
               </span>
               <div className="mlabel mt-1 text-foam/60">
                 {wins}W · {losses}L

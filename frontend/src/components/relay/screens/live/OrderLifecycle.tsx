@@ -243,10 +243,16 @@ function OrderBody({ order, latencyMs }: { order: OrderRecord; latencyMs: number
       </div>
 
       <div className="mt-3 flex items-center gap-3 flex-wrap">
-        <span className="data text-[0.7rem] text-foam/90 px-2 py-1 rounded-md border border-lined">
-          EST. LATENCY {latencyMs}MS
-        </span>
-        <span className="mlabel text-foam/50">ZERO FEES · GAS SPONSORED</span>
+        {latencyMs > 0 ? (
+          <span className="data text-[0.7rem] text-foam/90 px-2 py-1 rounded-md border border-lined">
+            EST. LATENCY {latencyMs}MS
+          </span>
+        ) : (
+          <span className="data text-[0.7rem] text-foam/90 px-2 py-1 rounded-md border border-lined">
+            EST. LATENCY —
+          </span>
+        )}
+        <span className="mlabel text-foam/50">ZERO PROTOCOL FEES · YOU PAY STT GAS</span>
       </div>
     </div>
   );
@@ -277,10 +283,10 @@ function FillBody({ fill, order }: { fill: FillRecord; order: OrderRecord }) {
             className="data text-lg font-bold wide text-lime tracking-tight"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            FILLED — SAME BLOCK
+            FILLED{fill.tx.block > 0 ? " — SAME BLOCK" : ""}
           </span>
           <span className="ml-auto data text-[0.7rem] font-semibold px-2.5 py-1 rounded-md bg-lime text-graphite">
-            order→confirm {order.latencyMs}ms
+            order→confirm {order.latencyMs > 0 ? `${order.latencyMs}ms` : "—"}
           </span>
         </div>
 
@@ -314,7 +320,9 @@ function FillBody({ fill, order }: { fill: FillRecord; order: OrderRecord }) {
               <span className="data text-xs">inspect on Shannon explorer</span>
             </TooltipContent>
           </Tooltip>
-          <span className="mlabel text-foam/50">BLOCK {fill.tx.block}</span>
+          {fill.tx.block > 0 ? (
+            <span className="mlabel text-foam/50">BLOCK {fill.tx.block}</span>
+          ) : null}
         </div>
       </div>
     </motion.div>

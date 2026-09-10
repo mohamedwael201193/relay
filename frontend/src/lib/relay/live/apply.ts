@@ -1,4 +1,4 @@
-import type { ArenaRunner, AssetId, Lap, LapPhase, LiveLap, MarketWindow, Runner, WindowCadence } from "../types";
+import type { AppNotification, ArenaRunner, AssetId, Lap, LapPhase, LiveLap, MarketWindow, Outcome, Runner, WindowCadence } from "../types";
 import { fillIsVerified, mapBackendState } from "../mapping";
 import type { ArenaRow, HistoryLap, LiveMarketRow, ProofBundle, RunnerRow } from "../api/client";
 
@@ -50,6 +50,12 @@ export function runnerFromRow(row: RunnerRow, draftName: string, config: Runner[
 export function arenaFromRows(rows: ArenaRow[], myVault: string | null): ArenaRunner[] {
   return rows.map((r, i) => {
     const laps = Number(r.verified_laps) || 0;
+    const wrRaw = r.win_rate;
+    const winRate =
+      wrRaw == null || wrRaw === "" ? Number.NaN : Number(wrRaw);
+    const closed = laps > 0;
+    const pnlLife = closed && r.pnl_raw != null && r.pnl_raw !== "" ? Number(r.pnl_raw) / 1e6 : Number.NaN;
+    const pnl7 = closed && r.pnl_7d_raw != null && r.pnl_7d_raw !== "" ? Number(r.pnl_7d_raw) / 1e6 : pnlLife;
     return {
       rank: i + 1,
       runnerId: r.vault,
@@ -57,11 +63,11 @@ export function arenaFromRows(rows: ArenaRow[], myVault: string | null): ArenaRu
       ownerHandle: shortHandle(r.owner),
       strategy: "Shannon runner",
       bias: "FOLLOW",
-      streak: 0,
-      bestStreak: 0,
-      pnl7d: 0,
-      pnlLifetime: 0,
-      winRate: 0,
+      streak: Number(r.streak) || 0,
+      bestStreak: Number(r.best_streak) || 0,
+      pnl7d: pnl7,
+      pnlLifetime: pnlLife,
+      winRate,
       laps,
       followers: 0,
       boosters: 0,
@@ -190,7 +196,7 @@ export function liveLapFromState(opts: {
           placedAt: Date.parse(lastOrder.created_at) || opts.now,
           status: verifiedFill ? "FILLED" : "PLACED",
           tx: { hash: lastOrder.tx_hash, block: 0, at: Date.parse(lastOrder.created_at) || opts.now },
-          latencyMs: 0,
+          latencyMs: 0, // unmeasured — UI must not render 0ms as a timing
         }
       : null,
     fill:
@@ -211,7 +217,7 @@ export function liveLapFromState(opts: {
         id: `ev-${opts.row.state}`,
         at: opts.now,
         kind: phase,
-        label: labelForState(opts.row.state, verifiedFill),
+        label: labelForState(opts.row.state, Boolean(verifiedFill)),
         detail: opts.row.last_error ?? opts.row.last_market_id ?? undefined,
       },
     ],
@@ -246,7 +252,7 @@ export function lapsFromHistory(
 ): Lap[] {
   const orders = proof?.orders ?? [];
   const settlements = proof?.settlements ?? [];
-  return history.flatMap((h) => {
+  const built = history.flatMap((h) => {
     const order = orders.find((o) => o.lap_index === h.lap_index);
     const settle = settlements.find((s) => s.lap_index === h.lap_index);
     const verified = fillIsVerified(order?.fill_class);
@@ -258,8 +264,17 @@ export function lapsFromHistory(
     const placedAt = Date.parse(h.created_at) || 0;
     const tx = { hash: order.tx_hash, block: 0, at: placedAt };
     const asset = assetFromMarket(h.market_id, h, markets);
-    const side = sideFromKind(null);
+    const side = sideFromKind((order as { kind?: string | number | null }).kind);
     const cadence = cadenceFromInterval(h.interval_sec ?? markets.find((m) => m.marketId.toLowerCase() === h.market_id.toLowerCase())?.intervalSec);
+    const entryCost = h.entry_cost != null && h.entry_cost !== "" ? Number(h.entry_cost) / 1e6 : NaN;
+    const stake = Number.isFinite(entryCost) ? entryCost : price * (filledQty || qty);
+    const pnl =
+      outcome === "OPEN"
+        ? 0
+        : h.pnl != null && h.pnl !== ""
+          ? Number(h.pnl) / 1e6
+          : 0;
+    const marketOutcome: Outcome = settle?.voided ? "VOID" : outcome === "LOSS" ? "DOWN" : "UP";
     return [{
       number: h.lap_index,
       market: {
@@ -273,11 +288,11 @@ export function lapsFromHistory(
         cadence,
       },
       side,
-      stake: price * qty,
+      stake,
       entryPrice: price,
       outcome,
-      marketOutcome: settle?.voided ? "VOID" : outcome === "LOSS" ? "DOWN" : "UP",
-      pnl: 0,
+      marketOutcome,
+      pnl,
       streakAfter: 0,
       shielded: false,
       settledAt: settle ? Date.parse(settle.created_at) || placedAt : placedAt,
@@ -291,7 +306,7 @@ export function lapsFromHistory(
         placedAt,
         status: "FILLED",
         tx,
-        latencyMs: 0,
+        latencyMs: 0, // unmeasured — UI must not render 0ms as a timing
       },
       fill: {
         id: `fil-${h.lap_index}`,
@@ -308,9 +323,55 @@ export function lapsFromHistory(
         settlementTx: settle?.redeem_tx ?? "",
         claimTx: settle?.redeem_tx ?? "",
         oracleQuestionId: "",
-        status: settle ? "VERIFIED" : "PENDING",
+        status: settle?.redeem_tx ? "VERIFIED" : settle ? "PENDING" : "PENDING",
         sealedAt: settle ? Date.parse(settle.created_at) || 0 : 0,
       },
     }];
   });
+  let run = 0;
+  for (const lap of built) {
+    if (lap.outcome === "WIN") {
+      run += 1;
+      lap.streakAfter = run;
+    } else if (lap.outcome === "LOSS") {
+      run = 0;
+      lap.streakAfter = 0;
+    } else {
+      lap.streakAfter = run;
+    }
+  }
+  return built;
+}
+
+/** New settled laps since `prev`. OPEN fills are not results. Does not invent lastResult. */
+export function notificationsFromLaps(prev: Lap[], next: Lap[]): AppNotification[] {
+  const prevByNumber = new Map(prev.map((l) => [l.number, l]));
+  const out: AppNotification[] = [];
+  for (const lap of next) {
+    if (lap.outcome === "OPEN") continue;
+    const before = prevByNumber.get(lap.number);
+    if (before && before.outcome === lap.outcome) continue;
+    const kind: AppNotification["kind"] =
+      lap.outcome === "WIN" ? "WIN" : lap.outcome === "LOSS" ? "LOSS" : "VOID";
+    const sign = lap.pnl > 0 ? "+" : lap.pnl < 0 ? "−" : "";
+    const pnlBit = lap.pnl !== 0 ? ` — ${sign}$${Math.abs(lap.pnl).toFixed(2)}` : "";
+    out.push({
+      id: `lap-${lap.number}-${kind}`,
+      kind,
+      title:
+        kind === "VOID"
+          ? `Lap ${lap.number} voided — stake returned`
+          : kind === "WIN"
+            ? `Lap ${lap.number} complete${pnlBit}`
+            : `Lap ${lap.number} resolved against you${pnlBit}`,
+      body:
+        kind === "VOID"
+          ? "Stake returned. Streak preserved."
+          : `${lap.market.asset} · streak ×${lap.streakAfter}.`,
+      at: lap.settledAt || 0,
+      read: false,
+      lap: lap.number,
+    });
+  }
+  return out;
 }

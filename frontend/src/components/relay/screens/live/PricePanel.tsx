@@ -56,13 +56,13 @@ export function PricePanel({ className }: { className?: string }) {
               delta > 0 ? "text-lime" : delta < 0 ? "text-ember" : "text-cream/80"
             )}
           >
-            {signedPct(delta)}
+            {price > 0 && market.openPrice > 0 ? signedPct(delta) : "—"}
           </div>
         </div>
         <div className="ml-auto text-right">
           <div className="mlabel text-foam/70">IMPLIED UP</div>
           <div className="data text-2xl font-semibold leading-none mt-1 text-flame">
-            {cents(probUp)}
+            {price > 0 ? cents(probUp) : "—"}
           </div>
         </div>
       </div>

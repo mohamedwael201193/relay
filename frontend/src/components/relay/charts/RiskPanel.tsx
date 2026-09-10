@@ -42,7 +42,7 @@ export function RiskPanel({
     <ChartPanel label="RISK · DRAWDOWN & EXPOSURE" className={className}>
       <ChartSummary text={ariaSummary} />
       {laps === 0 ? (
-        <ChartEmpty height={140} note="risk needs a tape to measure" />
+        <ChartEmpty height={140} note="risk needs decided laps to measure" />
       ) : (
         <div className="grid grid-cols-2 gap-3 px-4 pb-4 pt-2">
           <StatTile
