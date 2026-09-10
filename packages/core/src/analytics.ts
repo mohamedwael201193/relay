@@ -98,6 +98,21 @@ function streakKind(item: StreakInput): { outcome: LapOutcomeKind; shielded: boo
   return { outcome: item.outcome, shielded: Boolean(item.shielded) };
 }
 
+/** Consecutive verified wins from worker lap rows. `REDEEMED` is a win so policy stake compounds. */
+export function streakFromLapStates(
+  laps: Array<{ state: string; shielded?: boolean | string | null }>,
+): number {
+  return streakFromOutcomes(
+    laps.flatMap((lap) => {
+      const outcome = outcomeFromState(lap.state);
+      if (!outcome) return [];
+      const shielded =
+        lap.shielded === true || lap.shielded === "t" || lap.shielded === "true";
+      return [{ outcome, shielded }];
+    }),
+  ).current;
+}
+
 /** Consecutive verified wins. Voids and shielded losses keep the run; open/pending do not break or extend it. */
 export function streakFromOutcomes(outcomes: StreakInput[]): { current: number; best: number } {
   let run = 0;

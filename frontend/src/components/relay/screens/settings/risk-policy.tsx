@@ -52,10 +52,8 @@ export function RiskPolicySection() {
   const draft = useRelay((s) => s.draftConfig);
   const setDraft = useRelay((s) => s.setDraftConfig);
   const goScreen = useRelay((s) => s.goScreen);
-  const backendState = useRelay((s) => s.backendState);
-  const liveLap = useRelay((s) => s.liveLap);
-  const needsSettlementAuth =
-    backendState === "WAITING_SETTLEMENT" || backendState === "FILLED" || liveLap?.phase === "HOLD";
+  const backendLastError = useRelay((s) => s.backendLastError);
+  const needsSettlementAuth = backendLastError === "needs_outcome_approval";
 
   const live = runner?.config ?? config;
   const streak = useRelay((s) => s.streak);

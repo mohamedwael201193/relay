@@ -281,6 +281,41 @@ const managerWriteAbi = parseAbi([
   "function subscriptionOf(bytes32) view returns (uint256)",
 ]);
 
+const armedAbi = parseAbi([
+  "function armed() view returns (bytes32 marketId, address pool, address market, uint64 nonce, uint8 kind, uint256 price, uint256 quantity, uint64 expireNs, uint8 orderType, bool active, uint128 lastOrderId)",
+]);
+
+export async function readReactivityGate(
+  vault: Address,
+  marketId: Hex,
+): Promise<{ subscribed: boolean; subscriptionId: string; armedActive: boolean; armedMarketId: Hex }> {
+  const dep = loadShannonDeployment();
+  const client = shannonHttpClient();
+  const { keccak256, encodePacked } = await import("viem");
+  const k = keccak256(encodePacked(["address", "bytes32"], [vault, marketId]));
+  const [subId, armedRaw] = await Promise.all([
+    client.readContract({
+      address: dep.manager,
+      abi: managerWriteAbi,
+      functionName: "subscriptionOf",
+      args: [k],
+    }),
+    client.readContract({ address: vault, abi: armedAbi, functionName: "armed" }),
+  ]);
+  const armed = armedRaw as {
+    active?: boolean;
+    marketId?: Hex;
+  } & readonly unknown[];
+  const armedActive = Boolean(armed.active ?? armed[9]);
+  const armedMarketId = (armed.marketId ?? armed[0]) as Hex;
+  return {
+    subscribed: subId !== 0n,
+    subscriptionId: subId.toString(),
+    armedActive,
+    armedMarketId,
+  };
+}
+
 /** Subscribe the vault to OracleHub AnswerDelivered for this market. Shared-stake manager pays; no-ops if already registered or unfunded. */
 export async function registerMarketSubscription(
   account: LocalAccount,

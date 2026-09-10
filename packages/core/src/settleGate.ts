@@ -49,6 +49,26 @@ export function voidExpiredIsCallable(
   return blockTimestamp >= expiry + settlementWindow;
 }
 
+/**
+ * Sequence pattern: Reactivity `_onEvent` is the primary vault settle.
+ * `syncResolution` is recovery when there is no subscription or the
+ * callback did not consume the arm after one wait.
+ */
+export function shouldWaitForReactivity(opts: {
+  marketTerminal: boolean;
+  subscribed: boolean;
+  armedActive: boolean;
+  armedMarketId: string;
+  marketId: string;
+  alreadyWaited: boolean;
+}): boolean {
+  if (!opts.marketTerminal) return false;
+  if (!opts.subscribed) return false;
+  if (opts.alreadyWaited) return false;
+  if (!opts.armedActive) return false;
+  return opts.armedMarketId.toLowerCase() === opts.marketId.toLowerCase();
+}
+
 /** Reconstruct pnl from escrow + redeem when the worker did not persist it. Never invents. */
 export function derivedPnlRaw(
   pnl: string | null | undefined,

@@ -10,6 +10,7 @@ export function ownerBoundReset() {
     runner: null,
     vaultAddress: null as string | null,
     backendState: null as string | null,
+    backendLastError: null as string | null,
     liveLap: null,
     decision: null,
     laps: [] as never[],

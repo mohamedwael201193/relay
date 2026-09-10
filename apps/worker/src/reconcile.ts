@@ -12,6 +12,7 @@ import {
   settleFilledMarket,
   protocolChecksFailed,
   shortestPath,
+  streakFromLapStates,
   type RunnerState,
 } from "@relay/core";
 import {
@@ -27,28 +28,7 @@ import type { LocalAccount } from "viem/accounts";
 import type { Address, Hex } from "viem";
 
 function streakCurrent(laps: Array<{ state: string; shielded?: boolean | string | null }>): number {
-  let run = 0;
-  for (const lap of laps) {
-    if (lap.state === "SETTLED_VOID") continue;
-    if (
-      lap.state === "SETTLED_LOSS" &&
-      (lap.shielded === true || lap.shielded === "t" || lap.shielded === "true")
-    ) {
-      continue;
-    }
-    if (
-      lap.state === "FILLED" ||
-      lap.state === "ORDER_SUBMITTED" ||
-      lap.state === "PARTIAL_FILL" ||
-      lap.state === "DISCOVERING" ||
-      lap.state === "WAITING_SETTLEMENT"
-    ) {
-      continue;
-    }
-    if (lap.state === "SETTLED_WIN") run += 1;
-    else if (lap.state === "SETTLED_LOSS") run = 0;
-  }
-  return run;
+  return streakFromLapStates(laps);
 }
 
 function log(event: string, extra: Record<string, unknown>): void {
@@ -158,8 +138,15 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     const needsSettle = filledOrderNeedsSettle(lastOrder, lastSettle);
 
     if (needsSettle && lastOrder) {
-      await go("WAITING_SETTLEMENT", { lastMarketId: lastOrder.market_id });
-      const settlement = await settleFilledMarket(account, lastOrder.market_id as Hex, { vault });
+      const alreadyWaited = runner.last_error === "waiting_reactivity";
+      await go("WAITING_SETTLEMENT", {
+        lastMarketId: lastOrder.market_id,
+        lastError: runner.last_error,
+      });
+      const settlement = await settleFilledMarket(account, lastOrder.market_id as Hex, {
+        vault,
+        alreadyWaited,
+      });
       if (!settlement.settled) {
         let openPrice: string | null = null;
         let closePrice: string | null = null;
@@ -172,10 +159,16 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
         } catch {
           /* indexer optional */
         }
+        const waitingReactivity = Boolean(settlement.waitingReactivity);
         const needsApproval = Boolean(settlement.needsOutcomeApproval);
+        const lastError = waitingReactivity
+          ? "waiting_reactivity"
+          : needsApproval
+            ? "needs_outcome_approval"
+            : null;
         await go("WAITING_SETTLEMENT", {
           lastMarketId: lastOrder.market_id,
-          lastError: needsApproval ? "needs_outcome_approval" : null,
+          lastError,
         });
         await persistWorkerStep({
           runnerId: runner.id,
@@ -191,10 +184,16 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
         log("settlement_pending", {
           runnerId: runner.id,
           marketId: lastOrder.market_id,
+          waitingReactivity,
           needsOutcomeApproval: needsApproval,
+          fromCallback: Boolean(settlement.fromCallback),
         });
         return {
-          action: needsApproval ? "needs_outcome_approval" : "settlement_pending",
+          action: waitingReactivity
+            ? "waiting_reactivity"
+            : needsApproval
+              ? "needs_outcome_approval"
+              : "settlement_pending",
           runnerId: runner.id,
         };
       }
@@ -267,6 +266,8 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
         settled: settlement.settled,
         redeemed: settlement.redeemed,
         redeemTx: settlement.redeemTx,
+        fromCallback: Boolean(settlement.fromCallback),
+        syncVaultTx: settlement.syncVaultTx,
       });
       snap = await readVaultSnapshot(vault);
       if (snap.killed) {
@@ -389,6 +390,7 @@ export async function runWorkerLoop(account: LocalAccount, opts: { once?: boolea
         if (out.action === "no_lease" || out.action === "doctor_block") break;
         if (out.action === "filled" || out.action === "placed" || out.action === "no_attempt") break;
         if (out.action === "needs_outcome_approval") break;
+        if (out.action === "waiting_reactivity") break;
       }
     } catch (e) {
       log("tick_error", { error: (e as Error).message });

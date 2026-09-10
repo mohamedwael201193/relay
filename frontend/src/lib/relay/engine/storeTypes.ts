@@ -69,6 +69,7 @@ export interface RelayStore {
 
   vaultAddress: string | null;
   backendState: string | null;
+  backendLastError: string | null;
   apiError: string | null;
   txPhase: TxPhase | null;
   boostIntent: { leaderVault: string } | null;

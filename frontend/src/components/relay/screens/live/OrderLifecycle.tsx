@@ -346,8 +346,8 @@ function HoldBody({
   const pnlTone = pnl > 0 ? "text-lime" : pnl < 0 ? "text-ember" : "text-cream";
   const markTone =
     position.markPrice >= position.entryPrice ? "text-lime" : "text-ember";
-  const backendState = useRelay((s) => s.backendState);
-  const needsAuth = backendState === "WAITING_SETTLEMENT" || backendState === "FILLED" || phase === "HOLD";
+  const backendLastError = useRelay((s) => s.backendLastError);
+  const needsAuth = backendLastError === "needs_outcome_approval";
 
   return (
     <div>

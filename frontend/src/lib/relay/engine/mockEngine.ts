@@ -246,6 +246,7 @@ function initialState() {
     now,
     vaultAddress: null,
     backendState: null,
+    backendLastError: null,
     apiError: null,
     txPhase: null,
   };

@@ -24,6 +24,7 @@ export {
   deployScratchAndKill,
   refillVaultShield,
   registerMarketSubscription,
+  readReactivityGate,
   writeEvidence,
   runVaultFunding,
 } from "./vaultOps.js";
@@ -46,6 +47,7 @@ export {
   settlementIsFinal,
   derivedPnlRaw,
   voidExpiredIsCallable,
+  shouldWaitForReactivity,
 } from "./settleGate.js";
 export {
   classifyFill,
@@ -58,6 +60,7 @@ export {
 export {
   summarizeLaps,
   streakFromOutcomes,
+  streakFromLapStates,
   expectedFairPnl,
   aggregateArena,
   outcomeFromState,

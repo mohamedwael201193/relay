@@ -3,6 +3,7 @@ import {
   derivedPnlRaw,
   filledOrderNeedsSettle,
   settlementIsFinal,
+  shouldWaitForReactivity,
   voidExpiredIsCallable,
 } from "./settleGate.js";
 
@@ -77,5 +78,28 @@ describe("derivedPnlRaw", () => {
   it("does not invent pnl from a partial pair", () => {
     expect(derivedPnlRaw(null, "1500000", null)).toBeNull();
     expect(derivedPnlRaw(null, null, "0")).toBeNull();
+  });
+});
+
+describe("shouldWaitForReactivity", () => {
+  const marketId = "0x000000000000000000000000000000000000000000000000000000000001957d";
+  const base = {
+    marketTerminal: true,
+    subscribed: true,
+    armedActive: true,
+    armedMarketId: marketId,
+    marketId,
+    alreadyWaited: false,
+  };
+
+  it("waits one tick when the vault is subscribed and still armed", () => {
+    expect(shouldWaitForReactivity(base)).toBe(true);
+  });
+
+  it("does not wait after the callback consumed the arm, or after the recovery tick", () => {
+    expect(shouldWaitForReactivity({ ...base, armedActive: false })).toBe(false);
+    expect(shouldWaitForReactivity({ ...base, alreadyWaited: true })).toBe(false);
+    expect(shouldWaitForReactivity({ ...base, subscribed: false })).toBe(false);
+    expect(shouldWaitForReactivity({ ...base, marketTerminal: false })).toBe(false);
   });
 });

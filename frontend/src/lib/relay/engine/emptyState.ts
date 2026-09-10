@@ -69,6 +69,7 @@ export function emptyLiveState(): Omit<
     now: Date.now(),
     vaultAddress: null,
     backendState: null,
+    backendLastError: null,
     apiError: null,
     txPhase: null,
     boostIntent: null,

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { aggregateArena, expectedFairPnl, streakFromOutcomes, summarizeLaps } from "./analytics.js";
+import {
+  aggregateArena,
+  expectedFairPnl,
+  streakFromLapStates,
+  streakFromOutcomes,
+  summarizeLaps,
+} from "./analytics.js";
 
 describe("summarizeLaps", () => {
   it("gold: 3 wins, 2 losses, 1 void, 1 open → 60% / 40% with n=5", () => {
@@ -49,6 +55,20 @@ describe("streakFromOutcomes", () => {
         { outcome: "WIN" },
       ]),
     ).toEqual({ current: 3, best: 3 });
+  });
+});
+
+describe("streakFromLapStates", () => {
+  it("counts REDEEMED as a win so the next stake compounds", () => {
+    expect(
+      streakFromLapStates([
+        { state: "REDEEMED" },
+        { state: "WAITING_SETTLEMENT" },
+      ]),
+    ).toBe(1);
+    expect(
+      streakFromLapStates([{ state: "SETTLED_WIN" }, { state: "REDEEMED" }]),
+    ).toBe(2);
   });
 });
 

@@ -108,7 +108,14 @@ export async function runGoldE2e(privateKey: Hex) {
     await sleep(2000);
   }
 
-  const settlement = await settleFilledMarket(account, market1);
+  let settlement = await settleFilledMarket(account, market1, { vault: dep.vault });
+  for (let i = 0; i < 8 && Boolean(settlement.waitingReactivity); i++) {
+    await sleep(2000);
+    settlement = await settleFilledMarket(account, market1, {
+      vault: dep.vault,
+      alreadyWaited: i >= 4,
+    });
+  }
 
   let fromCallback = false;
   try {
@@ -178,7 +185,7 @@ export async function runGoldE2e(privateKey: Hex) {
       filled: filled1.filled,
       expireNs: filled1.expireNs,
     },
-    wait: { status, resolvedVia, fromCallback },
+    wait: { status, resolvedVia, fromCallback: fromCallback || Boolean(settlement.fromCallback) },
     settlement: {
       statusAfter: settlement.statusAfter,
       redeemed: settlement.redeemed,
@@ -188,6 +195,8 @@ export async function runGoldE2e(privateKey: Hex) {
       voided: settlement.voided,
       settled: settlement.settled,
       outcome: settlement.outcome,
+      fromCallback: Boolean(settlement.fromCallback),
+      waitingReactivity: Boolean(settlement.waitingReactivity),
     },
     lap2: {
       asset: lap2.asset,

@@ -4,8 +4,8 @@ import { SHANNON_ADDRESSES, requiredAddress } from "./addresses.js";
 import { getMarketOnchainHttp } from "./onchain.js";
 import { sendHttp, shannonHttpClient } from "./sendHttp.js";
 import { erc20Balance } from "./rpc.js";
-import { voidExpiredIsCallable } from "./settleGate.js";
-import { loadShannonDeployment, writeEvidence } from "./vaultOps.js";
+import { voidExpiredIsCallable, shouldWaitForReactivity } from "./settleGate.js";
+import { loadShannonDeployment, readReactivityGate, writeEvidence } from "./vaultOps.js";
 
 const MODULE = requiredAddress(SHANNON_ADDRESSES.binaryModule, "binaryModule");
 const COLLATERAL = requiredAddress(SHANNON_ADDRESSES.collateral, "collateral");
@@ -52,7 +52,7 @@ async function trySend(
 export async function settleFilledMarket(
   account: LocalAccount,
   marketId: Hex,
-  opts: { vault?: Address } = {},
+  opts: { vault?: Address; alreadyWaited?: boolean } = {},
 ) {
   const dep = loadShannonDeployment();
   const vault = opts.vault ?? dep.vault;
@@ -171,13 +171,49 @@ export async function settleFilledMarket(
   };
 
   if (afterPoke.isResolved || afterPoke.isVoided) {
-    const sv = await sendHttp(
-      account,
-      encodeFunctionData({ abi: vaultAbi, functionName: "syncResolution", args: [marketId] }),
-      { to: vault, gas: 10_000_000n },
-    );
-    syncVaultTx = sv.transactionHash;
-    txs.push({ name: "syncResolution", hash: sv.transactionHash, status: sv.status });
+    const gate = await readReactivityGate(vault, marketId);
+    const wait = shouldWaitForReactivity({
+      marketTerminal: true,
+      subscribed: gate.subscribed,
+      armedActive: gate.armedActive,
+      armedMarketId: gate.armedMarketId,
+      marketId,
+      alreadyWaited: Boolean(opts.alreadyWaited),
+    });
+    if (wait) {
+      const evidence = {
+        ...base,
+        vaultCollateralAfter: vaultColBefore.toString(),
+        syncVaultTx: null as Hex | null,
+        redeemTx: null as Hex | null,
+        redeemed: false,
+        needsOutcomeApproval: false,
+        waitingReactivity: true,
+        fromCallback: false,
+        outcome: "unresolved" as const,
+        settled: false,
+        winningOutcome: null as number | null,
+      };
+      writeEvidence("shannon-settlement.json", evidence);
+      return evidence;
+    }
+
+    const fromCallback =
+      gate.subscribed &&
+      !gate.armedActive &&
+      gate.armedMarketId.toLowerCase() === marketId.toLowerCase();
+
+    if (!fromCallback) {
+      const sv = await sendHttp(
+        account,
+        encodeFunctionData({ abi: vaultAbi, functionName: "syncResolution", args: [marketId] }),
+        { to: vault, gas: 10_000_000n },
+      );
+      syncVaultTx = sv.transactionHash;
+      txs.push({ name: "syncResolution", hash: sv.transactionHash, status: sv.status });
+    } else {
+      txs.push({ name: "syncResolution", hash: "skipped_reactivity", status: "success" });
+    }
 
     let moduleApproved = moduleApprovedStart;
     if (!moduleApproved) {
@@ -221,6 +257,8 @@ export async function settleFilledMarket(
         redeemTx,
         redeemed: false,
         needsOutcomeApproval: true,
+        waitingReactivity: false,
+        fromCallback,
         outcome: "unresolved" as const,
         settled: false,
         winningOutcome: win,
@@ -268,6 +306,8 @@ export async function settleFilledMarket(
       redeemTx,
       redeemed,
       needsOutcomeApproval,
+      waitingReactivity: false,
+      fromCallback,
       outcome,
       settled,
       winningOutcome: win,
@@ -284,6 +324,8 @@ export async function settleFilledMarket(
     redeemTx,
     redeemed: false,
     needsOutcomeApproval: false,
+    waitingReactivity: false,
+    fromCallback: false,
     outcome: "unresolved" as const,
     settled: false,
     winningOutcome: null as number | null,
@@ -296,7 +338,8 @@ export async function settleFilledMarketFromKey(
   privateKey: Hex,
   marketId: Hex,
   vault?: Address,
+  alreadyWaited = false,
 ) {
   const { privateKeyToAccount } = await import("viem/accounts");
-  return settleFilledMarket(privateKeyToAccount(privateKey), marketId, { vault });
+  return settleFilledMarket(privateKeyToAccount(privateKey), marketId, { vault, alreadyWaited });
 }

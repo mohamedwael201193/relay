@@ -225,6 +225,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
   useRelay.setState({
     vaultAddress: vault,
     backendState: row.state,
+    backendLastError: row.last_error ?? null,
     apiError: null,
     runner: runnerFromRow(row, useRelay.getState().runner?.name ?? "Runner", cfg),
     liveLap,
