@@ -2,7 +2,7 @@ services:
   - type: web
     name: relay-api
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: pnpm install --frozen-lockfile --prod=false
     startCommand: pnpm api
     healthCheckPath: /health
@@ -17,7 +17,7 @@ services:
   - type: worker
     name: relay-worker
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: pnpm install --frozen-lockfile --prod=false
     startCommand: pnpm worker
     envVars:

@@ -38,6 +38,19 @@ function envList(keys: string[]): { key: string; value: string }[] {
   return keys.map(envVar).filter((v): v is { key: string; value: string } => v != null);
 }
 
+function createError(body: unknown): string {
+  if (body && typeof body === "object" && "message" in body && typeof (body as { message: unknown }).message === "string") {
+    return (body as { message: string }).message;
+  }
+  if (Array.isArray(body)) {
+    return body
+      .map((row) => (row && typeof row === "object" && "message" in row ? String((row as { message: unknown }).message) : ""))
+      .filter(Boolean)
+      .join("; ");
+  }
+  return "create failed";
+}
+
 async function main() {
   const owners = await renderFetch("/owners");
   const list = Array.isArray(owners.body) ? (owners.body as OwnerWrap[]) : [];
@@ -100,20 +113,27 @@ async function main() {
       envVars,
       serviceDetails: {
         runtime: "node",
-        plan: "starter",
-        buildCommand: "pnpm install --frozen-lockfile",
-        startCommand,
+        plan: "free",
+        envSpecificDetails: {
+          buildCommand: "pnpm install --frozen-lockfile --prod=false",
+          startCommand,
+        },
         ...(healthCheckPath ? { healthCheckPath } : {}),
       },
     };
     const created = await renderFetch("/services", { method: "POST", body: JSON.stringify(payload) });
-    const body = created.body as { service?: { id?: string; serviceDetails?: { url?: string } }; id?: string };
+    const body = created.body as {
+      service?: { id?: string; serviceDetails?: { url?: string } };
+      id?: string;
+      message?: string;
+    };
     return {
       name,
       id: body.service?.id ?? body.id ?? null,
       created: created.status === 201 || created.status === 200,
       httpStatus: created.status,
       url: body.service?.serviceDetails?.url ?? null,
+      error: created.status >= 400 ? createError(created.body) : null,
     };
   }
 
