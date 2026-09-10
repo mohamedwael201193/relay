@@ -97,7 +97,7 @@ frontend/        Existing designed Next.js app (Privy + live API; no production 
 scripts/         operator scripts
 ```
 
-Public frontend env names: `NEXT_PUBLIC_RELAY_API_URL`, `NEXT_PUBLIC_PRIVY_APP_ID`, `NEXT_PUBLIC_NETWORK`, `NEXT_PUBLIC_CHAIN_ID`. Never put operator/deployer keys or database URLs in `NEXT_PUBLIC_*`. The Next app is its own pnpm workspace (`cd frontend && pnpm install && pnpm exec next build`) so Vercel/CI do not inherit the backend lockfile.
+Public frontend env names: `NEXT_PUBLIC_RELAY_API_URL`, `NEXT_PUBLIC_PRIVY_APP_ID`, `NEXT_PUBLIC_NETWORK`, `NEXT_PUBLIC_CHAIN_ID`. Never put operator/deployer keys or database URLs in `NEXT_PUBLIC_*`. The Next app is its own pnpm workspace (`cd frontend && pnpm install && pnpm exec next build`) so Vercel/CI do not inherit the backend lockfile. Vercel Root Directory is `frontend`; build command is `pnpm exec next build`. Point `NEXT_PUBLIC_RELAY_API_URL` at the Render API and add the Vercel origin to Render `CORS_ORIGINS` plus the Privy allow-list.
 
 `pnpm api` serves CORS for local Next (`http://localhost:3000`) plus `CORS_ORIGINS`. Start/stop/pause require an owner-signed message; kill/withdraw are on-chain `onlyOwner` calls from the wallet. The worker trades only vaults whose on-chain operator is the worker key.
 
