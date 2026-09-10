@@ -1,6 +1,7 @@
-import type { AppNotification, ArenaRunner, AssetId, Lap, LapPhase, LiveLap, MarketWindow, Outcome, Runner, WindowCadence } from "../types";
+import type { AppNotification, ArenaRunner, AssetId, BookSnapshot, Lap, LapPhase, LiveLap, MarketWindow, Outcome, Runner, WindowCadence } from "../types";
 import { fillIsVerified, mapBackendState } from "../mapping";
 import type { ArenaRow, HistoryLap, LiveMarketRow, ProofBundle, RunnerRow } from "../api/client";
+import { EMPTY_BOOK } from "../config/network";
 
 function shortHandle(addr: string): string {
   if (!addr) return "@runner";
@@ -168,6 +169,24 @@ export function liveFeedHistory(markets: LiveMarketRow[], asset: string): { t: n
     if (hist.length > 1) return hist;
   }
   return [];
+}
+
+export function bookSnapshotFromLive(book: LiveMarketRow["book"] | null | undefined): BookSnapshot {
+  if (!book) return EMPTY_BOOK;
+  const bidUp = book.bidUp ?? [];
+  const askUp = book.askUp ?? [];
+  const bidDown = book.bidDown ?? [];
+  const askDown = book.askDown ?? [];
+  if (bidUp.length === 0 && askUp.length === 0 && bidDown.length === 0 && askDown.length === 0) {
+    return EMPTY_BOOK;
+  }
+  const spread =
+    book.spread != null && Number.isFinite(book.spread)
+      ? book.spread
+      : bidUp[0] && askUp[0]
+        ? askUp[0].price - bidUp[0].price
+        : Number.NaN;
+  return { bidUp, askUp, bidDown, askDown, spread };
 }
 
 export function calendarFromMarkets(rows: LiveMarketRow[], now: number): MarketWindow[] {

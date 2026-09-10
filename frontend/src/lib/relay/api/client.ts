@@ -73,7 +73,13 @@ async function request<T>(
 export const relayApi = {
   health: () => request<{ ok: boolean; chainId: number; db: boolean; worker: boolean }>("/health"),
   network: async () => normalizeNetwork((await request<Record<string, unknown>>("/v1/network")) ?? {}),
-  markets: () => request<{ generatedAt: string; count: number; rows: LiveMarketRow[] }>("/v1/markets/live", { timeoutMs: 45_000 }),
+  markets: (marketId?: string | null) => {
+    const q = marketId ? `?marketId=${encodeURIComponent(marketId)}` : "";
+    return request<{ generatedAt: string; count: number; rows: LiveMarketRow[] }>(
+      `/v1/markets/live${q}`,
+      { timeoutMs: 45_000 },
+    );
+  },
   arena: () => request<{ runners: ArenaRow[] }>("/v1/arena"),
   runnersByOwner: (owner: string) =>
     request<{ runners: RunnerRow[] }>(`/v1/runners?owner=${encodeURIComponent(owner)}`),
@@ -140,6 +146,13 @@ export type LiveMarketRow = {
   livePrice?: number | null;
   priceHistory?: { t: number; p: number }[];
   oracleQuestionId?: string | null;
+  book?: {
+    bidUp: { price: number; size: number }[];
+    askUp: { price: number; size: number }[];
+    bidDown: { price: number; size: number }[];
+    askDown: { price: number; size: number }[];
+    spread: number | null;
+  } | null;
 };
 
 export type ArenaRow = {

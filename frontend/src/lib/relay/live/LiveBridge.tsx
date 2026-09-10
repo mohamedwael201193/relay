@@ -32,6 +32,7 @@ import {
   lapsFromHistory,
   liveFeedHistory,
   liveLapFromState,
+  bookSnapshotFromLive,
   notificationsFromLaps,
   runnerFromRow,
   streakFromHistory,
@@ -141,7 +142,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     relayApi.live(vault).catch(() => mine ?? null),
     relayApi.history(vault).catch(() => ({ laps: [] as never[] })),
     relayApi.proof(vault).catch(() => ({ proof: { orders: [], settlements: [], records: [] } as ProofBundle })),
-    relayApi.markets().catch(() => ({ rows: [] })),
+    relayApi.markets(mine.last_market_id).catch(() => ({ rows: [] })),
     relayApi.arena().catch(() => ({ runners: [] })),
   ]);
   let row =
@@ -218,6 +219,11 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     histRow?.priceHistory?.filter((p) => Number.isFinite(p.p) && p.p > 0) ??
     (liveLap ? liveFeedHistory(marketsRows, liveLap.market.asset) : [])
   );
+  const book = bookSnapshotFromLive(
+    histRow?.book ??
+      marketsRows.find((m) => m.marketId.toLowerCase() === (liveLap?.market.marketId ?? "").toLowerCase())
+        ?.book,
+  );
   useRelay.setState({
     vaultAddress: vault,
     backendState: row.state,
@@ -245,6 +251,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
       : prev.notifications,
     now,
     priceHistory,
+    book,
   });
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetFromMarket, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromLaps, sideFromKind, streakFromHistory } from "./apply";
+import { assetFromMarket, bookSnapshotFromLive, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromLaps, sideFromKind, streakFromHistory } from "./apply";
 import type { HistoryLap, LiveMarketRow, ProofBundle } from "../api/client";
 import type { Lap } from "../types";
 
@@ -286,5 +286,26 @@ describe("live feed fallback", () => {
     expect(lap?.market.asset).toBe("ETH");
     expect(lap?.market.openPrice).toBe(2438.89);
     expect(lap?.price).toBe(2439.615);
+  });
+});
+
+describe("bookSnapshotFromLive", () => {
+  it("maps a DreamDEX 5-level book and does not invent a spread", () => {
+    const snap = bookSnapshotFromLive({
+      bidUp: [{ price: 0.47, size: 2 }],
+      askUp: [{ price: 0.49, size: 1.5 }],
+      bidDown: [{ price: 0.51, size: 1.5 }],
+      askDown: [{ price: 0.53, size: 2 }],
+      spread: 0.02,
+    });
+    expect(snap.bidUp[0]).toEqual({ price: 0.47, size: 2 });
+    expect(snap.spread).toBeCloseTo(0.02);
+    expect(bookSnapshotFromLive({ bidUp: [], askUp: [], bidDown: [], askDown: [], spread: null })).toEqual({
+      bidUp: [],
+      askUp: [],
+      bidDown: [],
+      askDown: [],
+      spread: 0,
+    });
   });
 });

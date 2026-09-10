@@ -9,7 +9,8 @@ export {
   marketBoundaryPrices,
   marketOracleMeta,
 } from "./oraclePrice.js";
-export { runShannonHarness } from "./harness.js";
+export { humanBinaryBook, type HumanBinaryBook, type HumanBookLevel } from "./bookView.js";
+export { runShannonHarness, readShannonMarket } from "./harness.js";
 export { runDoctor, printDoctor, type DoctorReport, type Check } from "./doctor.js";
 export { runShannonFaucet } from "./faucet.js";
 export { deployShannon } from "./deploy.js";

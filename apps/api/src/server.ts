@@ -17,6 +17,7 @@ import {
   normalizePrivateKey,
   readVaultSnapshot,
   runShannonHarness,
+  readShannonMarket,
   shortestPath,
   type RunnerState,
 } from "@relay/core";
@@ -50,11 +51,14 @@ const MARKETS_TTL_MS = 20_000;
 let marketsCache: { at: number; body: unknown } | null = null;
 let marketsInflight: Promise<unknown> | null = null;
 
-async function liveMarketsPayload(): Promise<unknown> {
+async function liveMarketsPayload(extraId?: string | null): Promise<unknown> {
   if (marketsCache && Date.now() - marketsCache.at < MARKETS_TTL_MS) {
-    return marketsCache.body;
+    return mergeExtraMarket(marketsCache.body, extraId);
   }
-  if (marketsInflight) return marketsInflight;
+  if (marketsInflight) {
+    const body = await marketsInflight;
+    return mergeExtraMarket(body, extraId);
+  }
   marketsInflight = runShannonHarness(8)
     .then((body) => {
       marketsCache = { at: Date.now(), body };
@@ -63,7 +67,19 @@ async function liveMarketsPayload(): Promise<unknown> {
     .finally(() => {
       marketsInflight = null;
     });
-  return marketsInflight;
+  const body = await marketsInflight;
+  return mergeExtraMarket(body, extraId);
+}
+
+async function mergeExtraMarket(body: unknown, extraId?: string | null): Promise<unknown> {
+  const base = body as { generatedAt: string; count: number; rows: Array<{ marketId: string }> };
+  const want = extraId?.trim().toLowerCase();
+  if (!want || !want.startsWith("0x") || want.length < 10) return base;
+  if (base.rows.some((r) => r.marketId.toLowerCase() === want)) return base;
+  const extra = await readShannonMarket(extraId!.trim()).catch(() => null);
+  if (!extra) return base;
+  const rows = [extra, ...base.rows];
+  return { ...base, count: rows.length, rows };
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -197,7 +213,7 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
         return;
       }
       if (url.pathname === "/v1/markets/live") {
-        json(res, 200, await liveMarketsPayload());
+        json(res, 200, await liveMarketsPayload(url.searchParams.get("marketId")));
         return;
       }
       if (url.pathname === "/v1/arena") {
