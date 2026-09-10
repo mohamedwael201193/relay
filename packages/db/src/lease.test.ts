@@ -1,9 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { loadEnv } from "@relay/core";
-import { claimRunner, ensureRunner, releaseRunner, setRunnerState } from "./lease.js";
+import { claimPriority, claimRunner, ensureRunner, releaseRunner, setRunnerState } from "./lease.js";
 import { withPool } from "./pool.js";
 
 loadEnv();
+
+describe("claimPriority", () => {
+  it("yields waiting reactivity and daily-loss so other vaults can run", () => {
+    expect(claimPriority("WAITING_SETTLEMENT", null)).toBe(0);
+    expect(claimPriority("WAITING_SETTLEMENT", "waiting_reactivity")).toBe(2);
+    expect(claimPriority("WAITING_SETTLEMENT", "settlement_pending")).toBe(2);
+    expect(claimPriority("ACTIVE", null)).toBe(1);
+    expect(claimPriority("ERROR", "daily_loss_exceeded")).toBe(2);
+    expect(claimPriority("FILLED", null)).toBe(0);
+  });
+});
+
 
 const OWNER = "0x0000000000000000000000000000000000000b0b";
 

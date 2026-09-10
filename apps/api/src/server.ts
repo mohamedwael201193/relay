@@ -354,6 +354,10 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
         }
         const budgetUsd = Math.max(1, Number(body.budget) || 100);
         const stopRaw = Number(body.stop ?? body.stopLoss);
+        if (Number.isFinite(stopRaw) && stopRaw > budgetUsd) {
+          json(res, 400, { error: "stop_exceeds_budget" });
+          return;
+        }
         const stopUsd = Math.min(Math.max(1, Number.isFinite(stopRaw) && stopRaw > 0 ? stopRaw : 30), budgetUsd);
         const leader = boostOf ? await getRunnerByVault(boostOf) : null;
         const bias = parseBias(body.bias ?? leader?.bias);

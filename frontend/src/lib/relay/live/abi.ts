@@ -12,6 +12,8 @@ export const vaultWriteAbi = parseAbi([
   "function operator() view returns (address)",
   "function killed() view returns (bool)",
   "function budget() view returns (uint256)",
+  "function maxDailyLoss() view returns (uint256)",
+  "function realizedLossToday() view returns (uint256)",
   "function shieldCharges() view returns (uint8)",
   "function shieldsMax() view returns (uint8)",
 ]);

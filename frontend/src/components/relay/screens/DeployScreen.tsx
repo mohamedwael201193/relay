@@ -248,7 +248,9 @@ function AdvancedSection({
                 </button>
               ))}
             </div>
-            <div className="mlabel mt-2 text-foam/60">SHIELDS ARE NOT ENFORCED ON-CHAIN YET</div>
+            <div className="mlabel mt-2 text-foam/60">
+              OWNER CHARGES THEM ON THE VAULT AFTER DEPLOY · FIRST LOSS CONSUMES A CHARGE
+            </div>
           </fieldset>
         </div>
       )}

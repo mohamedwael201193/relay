@@ -101,6 +101,10 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
   let state = claimed.state as RunnerState;
   async function go(to: RunnerState, extra?: Parameters<typeof setRunnerState>[2]): Promise<void> {
     const hops = shortestPath(state, to);
+    if (hops.length === 0) {
+      await setRunnerState(runner.id, to, extra);
+      return;
+    }
     for (let i = 0; i < hops.length; i++) {
       const hop = hops[i];
       await setRunnerState(runner.id, hop, i === hops.length - 1 ? extra : {});
@@ -113,6 +117,18 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       await go("KILLED", { lastError: "vault killed on-chain" });
       log("killed", { vault, runnerId: runner.id });
       return { action: "killed", runnerId: runner.id };
+    }
+    const dailyLoss = BigInt(snap.realizedLossToday || "0");
+    const dailyCap = BigInt(snap.maxDailyLoss || "0");
+    if (dailyCap > 0n && dailyLoss > dailyCap) {
+      await go("ERROR", { lastError: "daily_loss_exceeded" });
+      log("parked_daily_loss", {
+        vault,
+        runnerId: runner.id,
+        realizedLossToday: snap.realizedLossToday,
+        maxDailyLoss: snap.maxDailyLoss,
+      });
+      return { action: "parked_daily_loss", runnerId: runner.id };
     }
     if (snap.operator.toLowerCase() !== account.address.toLowerCase()) {
       log("operator_mismatch", { vault, operator: snap.operator, runnerId: runner.id });
@@ -165,7 +181,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
           ? "waiting_reactivity"
           : needsApproval
             ? "needs_outcome_approval"
-            : null;
+            : "settlement_pending";
         await go("WAITING_SETTLEMENT", {
           lastMarketId: lastOrder.market_id,
           lastError,
@@ -371,9 +387,11 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     return { action: filled ? "filled" : "placed", runnerId: runner.id };
   } catch (e) {
     const msg = (e as Error).message;
-    await go("ERROR", { lastError: msg.slice(0, 500) });
-    log("error", { runnerId: runner.id, error: msg });
-    throw e;
+    const daily =
+      msg.includes("DailyLossExceeded") || /realizedLossToday/.test(msg);
+    await go("ERROR", { lastError: (daily ? "daily_loss_exceeded" : msg).slice(0, 500) });
+    log("error", { runnerId: runner.id, error: msg, parked: daily });
+    return { action: daily ? "parked_daily_loss" : "error", runnerId: runner.id };
   } finally {
     await releaseRunner(runner.id);
   }
@@ -389,8 +407,6 @@ export async function runWorkerLoop(account: LocalAccount, opts: { once?: boolea
         log("tick", out);
         if (out.action === "no_lease" || out.action === "doctor_block") break;
         if (out.action === "filled" || out.action === "placed" || out.action === "no_attempt") break;
-        if (out.action === "needs_outcome_approval") break;
-        if (out.action === "waiting_reactivity") break;
       }
     } catch (e) {
       log("tick_error", { error: (e as Error).message });

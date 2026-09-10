@@ -21,5 +21,7 @@ describe("runner state machine", () => {
     expect(shortestPath("FUNDED", "DISCOVERING")).toEqual(["ACTIVE", "DISCOVERING"]);
     expect(shortestPath("FILLED", "KILLED")).toEqual(["KILLED"]);
     expect(shortestPath("FILLED", "DISCOVERING")).toEqual(["REARMING", "DISCOVERING"]);
+    expect(canTransition("ERROR", "PAUSED")).toBe(true);
+    expect(shortestPath("ERROR", "PAUSED")).toEqual(["PAUSED"]);
   });
 });

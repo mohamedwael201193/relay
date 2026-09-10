@@ -25,6 +25,8 @@ export {
   boostConfigHash,
   readVaultSnapshot,
   fundVault,
+  setVaultOperator,
+  setVaultShieldsMax,
   withdrawVault,
   deployScratchAndKill,
   refillVaultShield,

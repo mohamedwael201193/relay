@@ -118,7 +118,13 @@ export function RiskPolicySection() {
                 ariaLabel="Budget"
                 options={BUDGETS}
                 value={draft.budget}
-                onChange={(v) => setDraft({ budget: v })}
+                onChange={(v) => {
+                  const allowed = STOP_LOSSES.filter((sl) => sl <= v);
+                  const stop = (allowed as readonly number[]).includes(draft.stopLoss)
+                    ? draft.stopLoss
+                    : (allowed[allowed.length - 1] ?? v);
+                  setDraft({ budget: v, stopLoss: stop });
+                }}
                 render={(v) => `$${v}`}
               />
             </FieldRow>
@@ -130,7 +136,7 @@ export function RiskPolicySection() {
             >
               <ChipGroup
                 ariaLabel="Stop-loss"
-                options={STOP_LOSSES}
+                options={STOP_LOSSES.filter((sl) => sl <= draft.budget)}
                 value={draft.stopLoss}
                 onChange={(v) => setDraft({ stopLoss: v })}
                 render={(v) => `$${v}`}

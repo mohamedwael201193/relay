@@ -2,6 +2,8 @@ export { withPool, pingDb, migrate } from "./pool.js";
 export { persistShannonGold, persistGoldE2e } from "./persistGold.js";
 export {
   claimRunner,
+  claimPriority,
+  CLAIM_YIELD_ERRORS,
   ensureRunner,
   getRunnerByVault,
   listRunnersByOwner,

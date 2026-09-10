@@ -152,7 +152,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
       ? { ...mine, ...live, vault: live.vault, state: live.state, last_market_id: live.lastMarketId, last_error: live.lastError, lap_index: live.lapIndex }
       : mine;
   if (!row) return;
-  const cfg = useRelay.getState().draftConfig;
+  const cfg = { ...useRelay.getState().draftConfig };
   const now = Date.now();
   const proofBundle = proof && "proof" in proof ? proof.proof : { orders: [], settlements: [], records: [] };
   const marketsRows = markets && "rows" in markets ? markets.rows : [];
@@ -163,7 +163,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
   let shieldsMaxOnchain = 0;
   try {
     const pc = await publicFor(net);
-    const [bal, killed, charges, maxSh] = await Promise.all([
+    const [bal, killed, charges, maxSh, budgetRaw, stopRaw] = await Promise.all([
       pc.readContract({
         address: net.collateral as Address,
         abi: erc20Abi,
@@ -185,11 +185,25 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
         abi: vaultWriteAbi,
         functionName: "shieldsMax",
       }).catch(() => 0),
+      pc.readContract({
+        address: vault as Address,
+        abi: vaultWriteAbi,
+        functionName: "budget",
+      }).catch(() => 0n),
+      pc.readContract({
+        address: vault as Address,
+        abi: vaultWriteAbi,
+        functionName: "maxDailyLoss",
+      }).catch(() => 0n),
     ]);
     vaultBal = Number(formatUnits(bal, net.decimals));
     onchainKilled = Boolean(killed);
     shieldCharges = Number(charges) || 0;
     shieldsMaxOnchain = Number(maxSh) || 0;
+    const chainBudget = Number(formatUnits(budgetRaw as bigint, net.decimals));
+    const chainStop = Number(formatUnits(stopRaw as bigint, net.decimals));
+    if (chainBudget > 0) cfg.budget = chainBudget;
+    if (chainStop > 0) cfg.stopLoss = chainStop;
   } catch {
     vaultBal = useRelay.getState().bankroll;
   }
@@ -236,6 +250,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     backendLastError: row.last_error ?? null,
     apiError: null,
     runner: runnerFromRow(row, useRelay.getState().runner?.name ?? "Runner", cfg),
+    config: cfg,
     liveLap,
     calendar: calendarFromMarkets(marketsRows, now),
     laps: mappedLaps,

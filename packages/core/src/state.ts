@@ -40,7 +40,7 @@ const allowed: Record<RunnerState, readonly RunnerState[]> = {
   REARMING: ["DISCOVERING", "STOPPED", "PAUSED", "KILLED", "ERROR"],
   STOPPED: ["ACTIVE", "KILLED"],
   KILLED: [],
-  ERROR: ["DISCOVERING", "STOPPED", "KILLED"],
+  ERROR: ["DISCOVERING", "STOPPED", "PAUSED", "KILLED"],
   PAUSED: ["ACTIVE", "STOPPED", "KILLED"],
 };
 

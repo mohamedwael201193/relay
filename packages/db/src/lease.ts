@@ -75,6 +75,34 @@ const CLAIMABLE_STATES = [
   "ERROR",
 ] as const;
 
+/** Parked / waiting last_error values that must not starve other runners. */
+export const CLAIM_YIELD_ERRORS = [
+  "waiting_reactivity",
+  "needs_outcome_approval",
+  "settlement_pending",
+  "daily_loss_exceeded",
+] as const;
+
+const SETTLE_CLAIM_STATES = [
+  "FILLED",
+  "PARTIAL_FILL",
+  "WAITING_SETTLEMENT",
+  "REDEEMING",
+  "REDEEMED",
+  "SETTLED_WIN",
+  "SETTLED_LOSS",
+  "SETTLED_VOID",
+  "REARMING",
+] as const;
+
+/** 0 = actionable settle, 1 = discover/place, 2 = yield to other vaults. */
+export function claimPriority(state: string, lastError: string | null | undefined): number {
+  const err = lastError ?? "";
+  if ((CLAIM_YIELD_ERRORS as readonly string[]).includes(err) || err === "daily_loss_exceeded") return 2;
+  if ((SETTLE_CLAIM_STATES as readonly string[]).includes(state)) return 0;
+  return 1;
+}
+
 export async function claimRunner(vault?: string): Promise<RunnerRow | null> {
   return withPool(async (c) => {
     const row = await c.query<RunnerRow>(
@@ -84,9 +112,11 @@ export async function claimRunner(vault?: string): Promise<RunnerRow | null> {
          SELECT id FROM runners
          WHERE state = ANY($2::text[])
            AND (lease_until IS NULL OR lease_until < now())
+           AND COALESCE(last_error, '') <> 'daily_loss_exceeded'
            AND ($1::text IS NULL OR lower(vault) = lower($1))
          ORDER BY
            CASE
+             WHEN COALESCE(last_error, '') = ANY($3::text[]) THEN 2
              WHEN state IN (
                'FILLED',
                'PARTIAL_FILL',
@@ -105,7 +135,7 @@ export async function claimRunner(vault?: string): Promise<RunnerRow | null> {
          LIMIT 1
        )
        RETURNING ${RUNNER_COLS}`,
-      [vault ?? null, [...CLAIMABLE_STATES]],
+      [vault ?? null, [...CLAIMABLE_STATES], [...CLAIM_YIELD_ERRORS]],
     );
     return row.rows[0] ?? null;
   });
