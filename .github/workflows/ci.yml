@@ -40,7 +40,12 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Install Forge
+        run: |
+          curl -fsSL -o foundry.tar.gz https://github.com/foundry-rs/foundry/releases/download/v1.3.0/foundry_v1.3.0_linux_amd64.tar.gz
+          tar -xzf foundry.tar.gz
+          sudo install -m 755 forge /usr/local/bin/forge
+          forge --version
       - run: pnpm install --frozen-lockfile
       - run: git clone --depth 1 https://github.com/foundry-rs/forge-std contracts/lib/forge-std
       - run: forge test -vv
