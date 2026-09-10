@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   transpilePackages: ["@privy-io/react-auth"],
   turbopack: {
-    root: path.join(frontendRoot, ".."),
+    root: frontendRoot,
   },
   /* config options here */
   typescript: {

@@ -73,6 +73,6 @@ jobs:
         run: pnpm install
       - name: build frontend
         working-directory: frontend
-        run: npx next build
+        run: pnpm exec next build
       - name: scan bundle for secrets
         run: node scripts/check-frontend-bundle.mjs
