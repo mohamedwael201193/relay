@@ -53,6 +53,9 @@ export function RiskPolicySection() {
   const setDraft = useRelay((s) => s.setDraftConfig);
   const goScreen = useRelay((s) => s.goScreen);
   const backendState = useRelay((s) => s.backendState);
+  const liveLap = useRelay((s) => s.liveLap);
+  const needsSettlementAuth =
+    backendState === "WAITING_SETTLEMENT" || backendState === "FILLED" || liveLap?.phase === "HOLD";
 
   const live = runner?.config ?? config;
   const streak = useRelay((s) => s.streak);
@@ -249,7 +252,7 @@ export function RiskPolicySection() {
               CHARGE SHIELDS ON THIS VAULT
             </button>
           ) : null}
-          {isLiveMode() && backendState === "WAITING_SETTLEMENT" ? (
+          {isLiveMode() && needsSettlementAuth ? (
             <button
               type="button"
               onClick={() => useRelay.getState().authorizeRedeem()}
@@ -259,7 +262,7 @@ export function RiskPolicySection() {
             </button>
           ) : null}
           <p className="data mt-3 text-xs leading-relaxed text-foam">
-            {isLiveMode() && backendState === "WAITING_SETTLEMENT"
+            {isLiveMode() && needsSettlementAuth
               ? "this vault still needs the owner to grant the markets module as outcome-token operator once. after that, redeem and lap n+1 run unattended."
               : isLiveMode() && streak.shieldsMax === 0
               ? "bias, budget and cadence stay locked mid-run. shields can be charged on this vault if it has the new bytecode."

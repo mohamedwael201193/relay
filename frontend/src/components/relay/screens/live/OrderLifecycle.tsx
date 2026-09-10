@@ -347,7 +347,7 @@ function HoldBody({
   const markTone =
     position.markPrice >= position.entryPrice ? "text-lime" : "text-ember";
   const backendState = useRelay((s) => s.backendState);
-  const needsAuth = backendState === "WAITING_SETTLEMENT";
+  const needsAuth = backendState === "WAITING_SETTLEMENT" || backendState === "FILLED" || phase === "HOLD";
 
   return (
     <div>

@@ -122,7 +122,18 @@ export async function settleFilledMarket(
     abi: marketAbi,
     functionName: "outcomeToken",
   })) as Address;
-  const [yesBal, noBal, moduleApprovedStart] = await Promise.all([
+  let moduleApprovedStart = false;
+  try {
+    moduleApprovedStart = await client.readContract({
+      address: outcomeToken,
+      abi: token6909Abi,
+      functionName: "isOperator",
+      args: [vault, MODULE],
+    });
+  } catch {
+    moduleApprovedStart = false;
+  }
+  const [yesBal, noBal] = await Promise.all([
     client.readContract({
       address: outcomeToken,
       abi: token6909Abi,
@@ -134,12 +145,6 @@ export async function settleFilledMarket(
       abi: token6909Abi,
       functionName: "balanceOf",
       args: [vault, afterPoke.noId],
-    }),
-    client.readContract({
-      address: outcomeToken,
-      abi: token6909Abi,
-      functionName: "isOperator",
-      args: [vault, MODULE],
     }),
   ]);
 
@@ -193,7 +198,7 @@ export async function settleFilledMarket(
         abi: token6909Abi,
         functionName: "isOperator",
         args: [vault, MODULE],
-      });
+      }).catch(() => false);
     }
 
     const nums = afterPoke.payoutNumerators;
