@@ -19,6 +19,7 @@ export function streakFromHistory(laps: HistoryLap[]): { current: number; best: 
   let best = 0;
   for (const lap of laps) {
     if (lap.state === "SETTLED_VOID") continue;
+    if (lap.shielded && lap.state === "SETTLED_LOSS") continue;
     if (lap.state === "FILLED" || lap.state === "ORDER_SUBMITTED" || lap.state === "PARTIAL_FILL") continue;
     if (lap.state === "SETTLED_WIN") {
       run += 1;
@@ -111,7 +112,7 @@ export function cadenceFromInterval(intervalSec?: string | null): WindowCadence 
 /** Shannon binary YES is UP. BUY_NO is DOWN. */
 export function sideFromKind(kind?: string | number | null): "UP" | "DOWN" {
   const k = String(kind ?? "").toUpperCase();
-  if (k === "BUY_NO" || k === "NO" || k === "DOWN") return "DOWN";
+  if (k === "BUY_NO" || k === "NO" || k === "DOWN" || k === "SELL_YES" || k === "1") return "DOWN";
   return "UP";
 }
 
@@ -314,11 +315,11 @@ export function lapsFromHistory(
       marketOutcome,
       pnl,
       streakAfter: 0,
-      shielded: false,
+      shielded: Boolean(h.shielded),
       settledAt: settle ? Date.parse(settle.created_at) || placedAt : placedAt,
       order: {
         id: `ord-${h.lap_index}`,
-        kind: "IOC",
+        kind: "IOC" as const,
         side,
         price,
         quantity: qty,
@@ -353,6 +354,8 @@ export function lapsFromHistory(
     if (lap.outcome === "WIN") {
       run += 1;
       lap.streakAfter = run;
+    } else if (lap.outcome === "LOSS" && lap.shielded) {
+      lap.streakAfter = run;
     } else if (lap.outcome === "LOSS") {
       run = 0;
       lap.streakAfter = 0;
@@ -383,11 +386,15 @@ export function notificationsFromLaps(prev: Lap[], next: Lap[]): AppNotification
           ? `Lap ${lap.number} voided — stake returned`
           : kind === "WIN"
             ? `Lap ${lap.number} complete${pnlBit}`
-            : `Lap ${lap.number} resolved against you${pnlBit}`,
+            : lap.shielded
+              ? `Lap ${lap.number} shield absorbed the loss${pnlBit}`
+              : `Lap ${lap.number} resolved against you${pnlBit}`,
       body:
         kind === "VOID"
           ? "Stake returned. Streak preserved."
-          : `${lap.market.asset} · streak ×${lap.streakAfter}.`,
+          : lap.shielded
+            ? `${lap.market.asset} · streak ×${lap.streakAfter} held.`
+            : `${lap.market.asset} · streak ×${lap.streakAfter}.`,
       at: lap.settledAt || 0,
       read: false,
       lap: lap.number,

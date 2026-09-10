@@ -619,7 +619,7 @@ function BankrollPanel() {
 function StreakPanel() {
   const streak = useRelay((s) => s.streak);
   const live = isLiveMode();
-  const shieldsHeld = live ? 0 : streak.shields;
+  const onchain = !live || streak.shieldsMax > 0;
   return (
     <Panel label="STREAK">
       <div className="flex flex-col gap-4 px-5 pb-5 pt-3">
@@ -632,10 +632,12 @@ function StreakPanel() {
         </div>
         <div className="flex items-center gap-2">
           {Array.from({ length: streak.shieldsMax }, (_, i) => (
-            <ShieldMark key={i} filled={i < shieldsHeld} className="h-6 w-auto" />
+            <ShieldMark key={i} filled={i < streak.shields} className="h-6 w-auto" />
           ))}
           <span className="mlabel ml-1 text-foam/80">
-            {live ? "SHIELDS NOT ON-CHAIN YET" : `${streak.shields}/${streak.shieldsMax} HELD`}
+            {live && !onchain
+              ? "SHIELDS NOT ON-CHAIN YET"
+              : `${streak.shields}/${streak.shieldsMax} HELD`}
           </span>
         </div>
         {!live && (

@@ -544,9 +544,10 @@ function RiskPolicy({ entry }: { entry: ArenaRunner }) {
         {
           icon: <ShieldMark className="h-5 w-5" aria-hidden />,
           label: "SHIELDS",
-          value: isLiveMode()
-            ? "Not on-chain yet — streak is verified wins only"
-            : `${streakState.shields}/${streakState.shieldsMax} — one loss absorbed without breaking the streak`,
+          value:
+            isLiveMode() && streakState.shieldsMax === 0
+              ? "Not on-chain yet — streak is verified wins only"
+              : `${streakState.shields}/${streakState.shieldsMax} — one loss absorbed without breaking the streak`,
         },
         {
           icon: <Timer className="h-4 w-4 text-foam" aria-hidden />,

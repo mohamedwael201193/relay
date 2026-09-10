@@ -89,6 +89,11 @@ describe("quant", () => {
     expect(collateralCostForKind(2, yesPrice, qty, unit)).toBe(1_600_000n);
   });
 
+  it("SELL_YES and SELL_NO escrow 0 collateral", () => {
+    expect(collateralCostForKind(1, 500_000n, 1_000_000n, 1_000_000n)).toBe(0n);
+    expect(collateralCostForKind(3, 500_000n, 1_000_000n, 1_000_000n)).toBe(0n);
+  });
+
   it("BUY_NO at 50¢ matches BUY_YES size at the same yes price", () => {
     const unit = 1_000_000n;
     const price = 500_000n;

@@ -39,6 +39,17 @@ describe("streakFromOutcomes", () => {
       best: 2,
     });
   });
+
+  it("shielded losses keep the run", () => {
+    expect(
+      streakFromOutcomes([
+        { outcome: "WIN" },
+        { outcome: "WIN" },
+        { outcome: "LOSS", shielded: true },
+        { outcome: "WIN" },
+      ]),
+    ).toEqual({ current: 3, best: 3 });
+  });
 });
 
 describe("expectedFairPnl", () => {

@@ -155,9 +155,11 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
   const historyLaps = history && "laps" in history ? history.laps : [];
   let vaultBal = 0;
   let onchainKilled = false;
+  let shieldCharges = 0;
+  let shieldsMaxOnchain = 0;
   try {
     const pc = await publicFor(net);
-    const [bal, killed] = await Promise.all([
+    const [bal, killed, charges, maxSh] = await Promise.all([
       pc.readContract({
         address: net.collateral as Address,
         abi: erc20Abi,
@@ -169,14 +171,29 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
         abi: vaultWriteAbi,
         functionName: "killed",
       }),
+      pc.readContract({
+        address: vault as Address,
+        abi: vaultWriteAbi,
+        functionName: "shieldCharges",
+      }).catch(() => 0),
+      pc.readContract({
+        address: vault as Address,
+        abi: vaultWriteAbi,
+        functionName: "shieldsMax",
+      }).catch(() => 0),
     ]);
     vaultBal = Number(formatUnits(bal, net.decimals));
     onchainKilled = Boolean(killed);
+    shieldCharges = Number(charges) || 0;
+    shieldsMaxOnchain = Number(maxSh) || 0;
   } catch {
     vaultBal = useRelay.getState().bankroll;
   }
   if (onchainKilled) row = { ...row, state: "KILLED" };
   const streak = streakFromHistory(historyLaps);
+  const protectedCount = historyLaps.filter(
+    (l) => l.shielded && (l.state === "SETTLED_LOSS"),
+  ).length;
   const mappedLaps = lapsFromHistory(historyLaps, proofBundle, marketsRows);
   const lastSettled = [...mappedLaps].reverse().find((l) => l.outcome !== "OPEN");
   const builtResult = lastSettled ? resultFromLap(lastSettled, vaultBal) : null;
@@ -202,10 +219,10 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     streak: {
       current: streak.current,
       best: Math.max(useRelay.getState().streak.best, streak.best),
-      shields: 0,
-      shieldsMax: 0,
+      shields: shieldCharges,
+      shieldsMax: shieldsMaxOnchain,
       nextShield: 0,
-      protectedCount: 0,
+      protectedCount,
     },
     lastResult: builtResult,
     resultSeen: isNewResult ? false : prev.resultSeen,
@@ -436,6 +453,20 @@ export function LiveBridge() {
               to: vaultAddr,
               data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "deposit", args: [unit] }),
             });
+          }
+          if (cfg.shieldsMax > 0) {
+            try {
+              await send(walletClient, publicClient, {
+                to: vaultAddr,
+                data: encodeFunctionData({
+                  abi: vaultWriteAbi,
+                  functionName: "setShieldsMax",
+                  args: [cfg.shieldsMax],
+                }),
+              });
+            } catch {
+              /* old vault bytecode has no shields */
+            }
           }
           const authStart = await signAction("start", vault, owner, walletClient);
           await relayApi.start(vault, authStart);

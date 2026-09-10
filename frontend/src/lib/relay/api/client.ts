@@ -170,6 +170,7 @@ export type HistoryLap = {
   entry_cost?: string | null;
   redeem_value?: string | null;
   pnl?: string | null;
+  shielded?: boolean | null;
 };
 
 export type ProofBundle = {

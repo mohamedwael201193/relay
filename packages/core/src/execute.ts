@@ -3,7 +3,7 @@ import { decodeEventLog, parseAbi, type Address, type Hex, type Log } from "viem
 import { privateKeyToAccount, type LocalAccount } from "viem/accounts";
 import { ORDER_KIND, ORDER_TYPE, orderBookEventsAbi } from "@somnia-chain/markets-sdk";
 import { SHANNON_ADDRESSES, requiredAddress } from "./addresses.js";
-import { classifyFill, collateralCostForKind, quantityForStake, snapDown } from "./quant.js";
+import { classifyFill, collateralCostForKind, quantityForStake, snapDown, snapQuantity } from "./quant.js";
 import { shannonHttpClient } from "./sendHttp.js";
 import { sendHttp } from "./sendHttp.js";
 import { loadShannonDeployment, writeEvidence } from "./vaultOps.js";
@@ -17,6 +17,8 @@ const vaultWriteAbi = parseAbi([
   "function arm(bytes32 marketId, uint8 kind, uint256 price, uint256 quantity, uint64 expireNs, uint8 orderType)",
   "function placeArmed() returns (bool accepted, uint128 orderId)",
   "function cancelLast()",
+  "function mintSet(bytes32 marketId, uint256 amount)",
+  "function burnSet(bytes32 marketId, uint256 amount)",
   "event Placed(bytes32 indexed marketId, uint128 orderId, bool accepted, uint256 notional)",
   "event PlacementRejected(bytes32 indexed marketId, string reason)",
   "event Armed(bytes32 indexed marketId, address pool, uint64 nonce, uint8 kind, uint256 price, uint256 quantity)",
@@ -190,18 +192,24 @@ export async function runLiveOrder(
   const nativeBid = buyNo ? chosen.bestNoBid : chosen.bestBid;
   const nativeAsk = buyNo ? chosen.bestNoAsk : chosen.bestAsk;
   const sideLabel = buyNo ? "NO" : "YES";
+  const emptyWanted = nativeBid == null && nativeAsk == null;
+  const dumpBid = buyNo ? chosen.bestBid : chosen.bestNoBid;
+  const useMint = emptyWanted;
 
-  if (buyNo && chosen.bestNoBid == null && chosen.bestNoAsk == null) {
-    throw new Error("BUY_NO requested but no NO book (empty noBids/noAsks); not minting a complete set");
+  if (useMint && (dumpBid == null || dumpBid <= 0n)) {
+    throw new Error(
+      `empty ${sideLabel} book and no bid to dump the unwanted leg; not holding an unhedged complete set`,
+    );
   }
 
-  const sizeNative = nativeAsk ?? nativeBid ?? 0n;
-  if (sizeNative <= 0n) {
+  const sizeNative = useMint ? 0n : nativeAsk ?? nativeBid ?? 0n;
+  const sizePrice = useMint
+    ? unit
+    : buyNo
+      ? noToYes(sizeNative, unit)
+      : sizeNative;
+  if (!useMint && (sizeNative <= 0n || sizePrice <= 0n)) {
     throw new Error(`no ${sideLabel} book price to size against`);
-  }
-  const sizePrice = buyNo ? noToYes(sizeNative, unit) : sizeNative;
-  if (sizePrice <= 0n) {
-    throw new Error("no book price to size against");
   }
   const stake =
     opts.targetStakeRaw && opts.targetStakeRaw > 0n
@@ -209,18 +217,23 @@ export async function runLiveOrder(
         ? opts.targetStakeRaw
         : vaultBal
       : vaultBal;
-  const qty = quantityForStake({
-    stake,
-    price: sizePrice,
-    unit,
-    lotSize: chosen.book.lotSize,
-    minQuantity: chosen.book.minQuantity,
-    cap: vaultBal,
-    kind,
-  });
+  const qty = useMint
+    ? snapQuantity(stake, chosen.book.lotSize, chosen.book.minQuantity)
+    : quantityForStake({
+        stake,
+        price: sizePrice,
+        unit,
+        lotSize: chosen.book.lotSize,
+        minQuantity: chosen.book.minQuantity,
+        cap: vaultBal,
+        kind,
+      });
+  if (useMint && qty > vaultBal) {
+    throw new Error("vault collateral below mint-set size");
+  }
 
   let postPrice = 0n;
-  if (!iocOnly) {
+  if (!useMint && !iocOnly) {
     const postNative = postOnlyNative(nativeBid, nativeAsk, tick, sideLabel);
     postPrice = buyNo ? noToYes(postNative, unit) : postNative;
     if (postPrice <= 0n || (buyNo && postPrice >= unit)) {
@@ -228,7 +241,7 @@ export async function runLiveOrder(
     }
     const postCost = collateralCostForKind(kind, postPrice, qty, unit);
     if (postCost > vaultBal) throw new Error("vault collateral below POST_ONLY escrow");
-  } else if (nativeAsk == null) {
+  } else if (!useMint && iocOnly && nativeAsk == null) {
     throw new Error(buyNo ? "IOC requested but noAsks empty" : "IOC requested but yesAsks empty");
   }
 
@@ -238,12 +251,14 @@ export async function runLiveOrder(
     label: string;
     price: bigint;
     orderType: number;
+    kindOverride?: number;
   }): Promise<AttemptResult> {
+    const k = attemptOpts.kindOverride ?? kind;
     const correlationId = `${correlationRoot}:${attemptOpts.label}`;
     const armData = encodeFunctionData({
       abi: vaultWriteAbi,
       functionName: "arm",
-      args: [chosen!.marketId, kind, attemptOpts.price, qty, chosen!.expireNs, attemptOpts.orderType],
+      args: [chosen!.marketId, k, attemptOpts.price, qty, chosen!.expireNs, attemptOpts.orderType],
     });
     const armRcpt = await sendHttp(account, armData, { to: vault, gas: 10_000_000n });
     if (armRcpt.status !== "success") {
@@ -262,7 +277,7 @@ export async function runLiveOrder(
       marketId: chosen!.marketId,
       pool: chosen!.pool,
       nonce: chosen!.nonce.toString(),
-      kind,
+      kind: k,
       orderType: attemptOpts.orderType,
       price: attemptOpts.price.toString(),
       quantity: qty.toString(),
@@ -286,31 +301,78 @@ export async function runLiveOrder(
     };
   }
 
-  const postOnly = iocOnly
-    ? null
-    : await attempt({ label: "POST_ONLY", price: postPrice, orderType: ORDER_TYPE.POST_ONLY });
-
+  let postOnly: AttemptResult | null = null;
   let ioc: AttemptResult | null = null;
-  const needIoc =
-    iocOnly ||
-    (postOnly != null && postOnly.fillClass !== "FILL" && postOnly.fillClass !== "PARTIAL_FILL" && nativeAsk != null);
-  if (needIoc && nativeAsk != null) {
-    if (postOnly?.placedEvent && postOnly.orderId) {
-      const cancelRcpt = await sendHttp(
+  let mintTx: Hex | null = null;
+
+  if (useMint) {
+    const mintRcpt = await sendHttp(
+      account,
+      encodeFunctionData({
+        abi: vaultWriteAbi,
+        functionName: "mintSet",
+        args: [chosen.marketId, qty],
+      }),
+      { to: vault, gas: 15_000_000n },
+    );
+    mintTx = mintRcpt.transactionHash;
+    if (mintRcpt.status !== "success") {
+      throw new Error(`mintSet failed hash=${mintRcpt.transactionHash}`);
+    }
+    const sellKind = buyNo ? ORDER_KIND.SELL_YES : ORDER_KIND.SELL_NO;
+    const sellNative = snapDown(dumpBid!, tick);
+    const sellPrice = buyNo ? sellNative : noToYes(sellNative, unit);
+    ioc = await attempt({
+      label: "MINT_DUMP",
+      price: sellPrice,
+      orderType: ORDER_TYPE.MARKET,
+      kindOverride: sellKind,
+    });
+    const dumped = BigInt(ioc.filled);
+    if (dumped < qty) {
+      const leftover = qty - dumped;
+      const burnRcpt = await sendHttp(
         account,
-        encodeFunctionData({ abi: vaultWriteAbi, functionName: "cancelLast" }),
-        { to: vault, gas: 10_000_000n },
+        encodeFunctionData({
+          abi: vaultWriteAbi,
+          functionName: "burnSet",
+          args: [chosen.marketId, leftover],
+        }),
+        { to: vault, gas: 15_000_000n },
       );
-      if (cancelRcpt.status !== "success") {
-        writeEvidence(opts.evidenceName ?? "shannon-order.json", { postOnly, ioc: null, cancelFailed: cancelRcpt.transactionHash });
-        return { postOnly, ioc: null, asset: chosen.asset, intervalSec: chosen.intervalSec };
+      if (burnRcpt.status !== "success" && dumped === 0n) {
+        throw new Error(`mint dump missed and burnSet failed hash=${burnRcpt.transactionHash}`);
       }
     }
-    const iocNative = snapDown(nativeAsk, tick);
-    const iocPrice = buyNo ? noToYes(iocNative, unit) : iocNative;
-    const iocCost = collateralCostForKind(kind, iocPrice, qty, unit);
-    if (iocCost <= vaultBal) {
-      ioc = await attempt({ label: "IOC", price: iocPrice, orderType: ORDER_TYPE.MARKET });
+  } else {
+    postOnly = iocOnly
+      ? null
+      : await attempt({ label: "POST_ONLY", price: postPrice, orderType: ORDER_TYPE.POST_ONLY });
+
+    const needIoc =
+      iocOnly ||
+      (postOnly != null && postOnly.fillClass !== "FILL" && postOnly.fillClass !== "PARTIAL_FILL" && nativeAsk != null);
+    if (needIoc && nativeAsk != null) {
+      if (postOnly?.placedEvent && postOnly.orderId) {
+        const cancelRcpt = await sendHttp(
+          account,
+          encodeFunctionData({ abi: vaultWriteAbi, functionName: "cancelLast" }),
+          { to: vault, gas: 10_000_000n },
+        );
+        if (cancelRcpt.status !== "success") {
+          writeEvidence(opts.evidenceName ?? "shannon-order.json", {
+            postOnly,
+            cancelFailed: cancelRcpt.transactionHash,
+            note: "cancelLast failed; still attempting IOC",
+          });
+        }
+      }
+      const iocNative = snapDown(nativeAsk, tick);
+      const iocPrice = buyNo ? noToYes(iocNative, unit) : iocNative;
+      const iocCost = collateralCostForKind(kind, iocPrice, qty, unit);
+      if (iocCost <= vaultBal) {
+        ioc = await attempt({ label: "IOC", price: iocPrice, orderType: ORDER_TYPE.MARKET });
+      }
     }
   }
 
@@ -322,6 +384,7 @@ export async function runLiveOrder(
     intervalSec: chosen.intervalSec,
     bias: opts.bias ?? null,
     kind,
+    mintTx,
     book: {
       tick: chosen.book.tickSize.toString(),
       lot: chosen.book.lotSize.toString(),
@@ -333,7 +396,7 @@ export async function runLiveOrder(
     },
     postOnly,
     ioc,
-    note: "fillClass is from OrderFilled logs, never from receipt.status; BUY_NO price is YES-terms after unit-noPrice conversion",
+    note: "fillClass is from OrderFilled logs; mint-path dumps the unwanted leg; BUY_NO price is YES-terms",
   });
   return { postOnly, ioc, asset: chosen.asset, intervalSec: chosen.intervalSec };
 }

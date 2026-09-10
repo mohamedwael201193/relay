@@ -121,7 +121,7 @@ export function RunnerStatusRow({ className }: { className?: string }) {
           <FlameMark className="w-3.5 h-4" animated={streak.current > 0} />
           <span className="data font-semibold text-sm text-flame">×{streak.current}</span>
         </span>
-        {isLiveMode() || streak.shieldsMax === 0 ? (
+        {isLiveMode() && streak.shieldsMax === 0 ? (
           <span className="mlabel px-2.5 py-1.5 rounded-lg border-2 border-lined text-foam/80">
             SHIELDS NOT ON-CHAIN
           </span>

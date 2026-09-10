@@ -52,6 +52,10 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
     event Cancelled(uint128 orderId);
     event LapSettled(bytes32 indexed marketId, uint256 questionId, bool voided, uint8 winningOutcome, bool fromCallback);
     event Redeemed(bytes32 indexed marketId, uint8 outcomeIdx, uint256 amount);
+    event Minted(bytes32 indexed marketId, uint256 amount);
+    event Burned(bytes32 indexed marketId, uint256 amount);
+    event ShieldAbsorbed(bytes32 indexed marketId, uint8 remaining);
+    event ShieldRefilled(uint8 charges);
 
     address public immutable owner;
     IERC20 public immutable collateral;
@@ -74,6 +78,9 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
     uint256 public outstandingNotional;
     uint256 public dayStart;
     uint256 public realizedLossToday;
+    uint8 public shieldsMax;
+    uint8 public shieldCharges;
+    uint256 public lastMintAmount;
 
     struct Arm {
         bytes32 marketId;
@@ -141,7 +148,7 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
         return collateralCost(0, price, quantity);
     }
 
-    /// @notice BUY_YES=0 and BUY_NO=2 match markets-sdk writer.ts escrow. Sells are unsupported in v1.
+    /// @notice BUY_YES=0 / BUY_NO=2 match writer.ts escrow. SELL_YES=1 / SELL_NO=3 escrow outcome tokens (0 collateral).
     function collateralCost(uint8 kind, uint256 price, uint256 quantity) public view returns (uint256) {
         uint256 unit = 10 ** uint256(priceDecimals);
         if (kind == 0) {
@@ -150,6 +157,9 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
         if (kind == 2) {
             if (price >= unit) revert CapExceeded(price, unit);
             return (quantity * (unit - price) + unit - 1) / unit;
+        }
+        if (kind == 1 || kind == 3) {
+            return 0;
         }
         revert UnsupportedKind(kind);
     }
@@ -186,6 +196,25 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
         maxDailyLoss = maxDailyLoss_;
         maxOutstandingNotional = maxOutstanding_;
         emit CapsSet(budget_, perWindowCap_, maxDailyLoss_, maxOutstanding_);
+    }
+
+    function setShieldsMax(uint8 max_) external onlyOwner {
+        if (max_ > 3) max_ = 3;
+        uint8 prev = shieldsMax;
+        shieldsMax = max_;
+        if (prev == 0 && max_ > 0) {
+            // First enable pre-funds the configured charges (concept: one loss-sized buffer).
+            shieldCharges = max_;
+        } else if (shieldCharges > shieldsMax) {
+            shieldCharges = shieldsMax;
+        }
+    }
+
+    function refillShield() external onlyOperator notKilled {
+        if (shieldsMax == 0) return;
+        if (shieldCharges >= shieldsMax) return;
+        shieldCharges += 1;
+        emit ShieldRefilled(shieldCharges);
     }
 
     function proposeOperator(address next) external onlyOwner {
@@ -272,7 +301,12 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
         if (marketAddr != a.market) revert PoolMismatch(a.market, marketAddr);
 
         uint256 notional = collateralCost(a.kind, a.price, a.quantity);
-        collateral.forceApprove(a.pool, notional);
+        if (a.kind == 1 || a.kind == 3) {
+            address ot = IBinaryMarket(a.market).outcomeToken();
+            IOutcomeToken6909(ot).setOperator(a.pool, true);
+        } else {
+            collateral.forceApprove(a.pool, notional);
+        }
 
         try IBinaryPool(a.pool).placeBinaryOrder(
             a.kind, a.price, a.quantity, a.expireNs, a.orderType, 0, address(0), 0, 0
@@ -301,6 +335,36 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
         else outstandingNotional = 0;
         armed.lastOrderId = 0;
         emit Cancelled(id);
+    }
+
+    /// @notice Mint a complete YES+NO set against the pool (empty-book fallback).
+    function mintSet(bytes32 marketId, uint256 amount) external onlyOperator notKilled nonReentrant {
+        if (amount == 0) revert NothingToRedeem();
+        if (amount > perWindowCap) revert CapExceeded(amount, perWindowCap);
+        if (amount > budget) revert CapExceeded(amount, budget);
+        _rollDay();
+        if (realizedLossToday > maxDailyLoss) revert DailyLossExceeded(realizedLossToday, maxDailyLoss);
+        (, , , address col, , , , , address marketAddr, address pool, , , , ) = module.markets(marketId);
+        if (col != address(collateral)) revert PoolMismatch(address(collateral), col);
+        if (pool == address(0) || marketAddr == address(0)) revert NotArmed();
+        collateral.forceApprove(pool, amount);
+        IBinaryPool(pool).mintSet(address(this), address(this), amount);
+        lastMintAmount = amount;
+        emit Minted(marketId, amount);
+    }
+
+    /// @notice Merge leftover YES+NO back to collateral when a mint-path dump does not fill.
+    function burnSet(bytes32 marketId, uint256 amount) external onlyOperator notKilled nonReentrant {
+        if (amount == 0) revert NothingToRedeem();
+        (, , , address col, , , , , address marketAddr, address pool, , , , ) = module.markets(marketId);
+        if (col != address(collateral)) revert PoolMismatch(address(collateral), col);
+        if (pool == address(0) || marketAddr == address(0)) revert NotArmed();
+        address ot = IBinaryMarket(marketAddr).outcomeToken();
+        IOutcomeToken6909(ot).setOperator(pool, true);
+        IBinaryPool(pool).burnSet(amount);
+        if (lastMintAmount >= amount) lastMintAmount -= amount;
+        else lastMintAmount = 0;
+        emit Burned(marketId, amount);
     }
 
     function syncResolution(bytes32 marketId) external {
@@ -353,13 +417,21 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
         uint8 win = _winner(nums, voided);
         armed.active = false;
         if (!voided && win != type(uint8).max) {
-            // loss if we bought the losing side
-            bool boughtYes = armed.kind == 0;
-            bool boughtNo = armed.kind == 2;
+            // BUY_YES / SELL_NO keep YES; BUY_NO / SELL_YES keep NO.
+            bool boughtYes = armed.kind == 0 || armed.kind == 3;
+            bool boughtNo = armed.kind == 2 || armed.kind == 1;
             bool lost = (boughtYes && win == 1) || (boughtNo && win == 0);
             if (lost) {
                 _rollDay();
-                realizedLossToday += committed;
+                uint256 lossNotional = committed;
+                if (lossNotional == 0 && lastMintAmount > 0) lossNotional = lastMintAmount;
+                lastMintAmount = 0;
+                if (shieldCharges > 0) {
+                    shieldCharges -= 1;
+                    emit ShieldAbsorbed(marketId, shieldCharges);
+                } else {
+                    realizedLossToday += lossNotional;
+                }
             }
         }
         emit LapSettled(marketId, questionId, voided, win, fromCallback);

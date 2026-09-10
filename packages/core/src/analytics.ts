@@ -91,12 +91,21 @@ export function summarizeLaps(laps: AnalyticsLap[]): RunnerAnalytics {
   };
 }
 
-/** Consecutive verified wins. Voids keep the run; open/pending do not break or extend it. */
-export function streakFromOutcomes(outcomes: LapOutcomeKind[]): { current: number; best: number } {
+export type StreakInput = LapOutcomeKind | { outcome: LapOutcomeKind; shielded?: boolean };
+
+function streakKind(item: StreakInput): { outcome: LapOutcomeKind; shielded: boolean } {
+  if (typeof item === "string") return { outcome: item, shielded: false };
+  return { outcome: item.outcome, shielded: Boolean(item.shielded) };
+}
+
+/** Consecutive verified wins. Voids and shielded losses keep the run; open/pending do not break or extend it. */
+export function streakFromOutcomes(outcomes: StreakInput[]): { current: number; best: number } {
   let run = 0;
   let best = 0;
-  for (const o of outcomes) {
+  for (const item of outcomes) {
+    const { outcome: o, shielded } = streakKind(item);
     if (o === "VOID" || o === "OPEN") continue;
+    if (o === "LOSS" && shielded) continue;
     if (o === "WIN") {
       run += 1;
       if (run > best) best = run;
@@ -131,6 +140,7 @@ export type ArenaAggInput = {
   bias?: string | null;
   interval_sec?: string | null;
   assets?: string[] | null;
+  shielded?: boolean | string | null;
 };
 
 export type ArenaAggRow = {
@@ -164,7 +174,7 @@ export function aggregateArena(rows: ArenaAggInput[]): ArenaAggRow[] {
   const out: ArenaAggRow[] = [];
   for (const [vault, list] of byVault) {
     const head = list[0];
-    const outcomes: LapOutcomeKind[] = [];
+    const outcomes: StreakInput[] = [];
     let pnl = 0n;
     let pnl7d = 0n;
     let hasPnl = false;
@@ -173,7 +183,9 @@ export function aggregateArena(rows: ArenaAggInput[]): ArenaAggRow[] {
       if (!row.lap_state) continue;
       const o = outcomeFromState(row.lap_state);
       if (!o) continue;
-      outcomes.push(o);
+      const shielded =
+        row.shielded === true || row.shielded === "t" || row.shielded === "true";
+      outcomes.push({ outcome: o, shielded });
       if (row.pnl != null && row.pnl !== "" && o !== "OPEN") {
         const v = BigInt(row.pnl);
         pnl += v;
@@ -183,7 +195,13 @@ export function aggregateArena(rows: ArenaAggInput[]): ArenaAggRow[] {
       }
     }
     const stats = summarizeLaps(
-      outcomes.map((outcome) => ({ outcome, pnl: 0, stake: 0, entryPrice: 0, settledAt: 0 })),
+      outcomes.map((item) => ({
+        outcome: streakKind(item).outcome,
+        pnl: 0,
+        stake: 0,
+        entryPrice: 0,
+        settledAt: 0,
+      })),
     );
     const streak = streakFromOutcomes(outcomes);
     out.push({

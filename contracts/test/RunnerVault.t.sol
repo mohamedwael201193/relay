@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {RunnerVault} from "../src/RunnerVault.sol";
 import {RelayRegistry} from "../src/RelayRegistry.sol";
 import {Verified} from "../src/Verified.sol";
-import {MockModule, MockPool, MockMarket, MockERC20} from "./mocks/Mocks.sol";
+import {MockModule, MockPool, MockMarket, MockERC20, Mock6909} from "./mocks/Mocks.sol";
 
 contract RunnerVaultTest is Test {
     RunnerVault vault;
@@ -13,6 +13,7 @@ contract RunnerVaultTest is Test {
     MockPool pool;
     MockMarket market;
     MockERC20 usdc;
+    Mock6909 otoken;
     RelayRegistry registry;
 
     address owner = address(this);
@@ -28,6 +29,8 @@ contract RunnerVaultTest is Test {
         pool = new MockPool();
         market = new MockMarket();
         usdc = new MockERC20();
+        otoken = new Mock6909();
+        market.setOutcomeToken(address(otoken));
         module.set(MARKET, 42, address(pool), address(market), address(usdc), 7);
         vault = new RunnerVault(
             owner, address(usdc), address(module), HUB, 6, 10_000e6, 1_000e6, 5_000e6, 5_000e6
@@ -224,10 +227,40 @@ contract RunnerVaultTest is Test {
         assertEq(vault.collateralCost(2, 250_000, 1_000_000), 750_000);
     }
 
-    function test_unsupported_sell_kind() public {
+    function test_sell_kind_zero_collateral() public view {
+        assertEq(vault.collateralCost(1, 500_000, 1_000_000), 0);
+        assertEq(vault.collateralCost(3, 500_000, 1_000_000), 0);
+    }
+
+    function test_mint_and_burn_set() public {
         vm.prank(operator);
-        vm.expectRevert(abi.encodeWithSelector(RunnerVault.UnsupportedKind.selector, 1));
-        vault.arm(MARKET, 1, 500_000, 1_000_000, uint64((block.timestamp + 3600) * 1e9), 3);
+        vault.mintSet(MARKET, 1_000_000);
+        assertEq(pool.minted(), 1_000_000);
+        assertEq(vault.lastMintAmount(), 1_000_000);
+        vm.prank(operator);
+        vault.burnSet(MARKET, 1_000_000);
+        assertEq(pool.burned(), 1_000_000);
+    }
+
+    function test_shield_absorbs_loss() public {
+        vault.setShieldsMax(2);
+        assertEq(vault.shieldCharges(), 2);
+        assertEq(vault.shieldsMax(), 2);
+        _arm(0, 500_000, 1_000_000);
+        vm.prank(operator);
+        vault.placeArmed();
+        vm.prank(PRECOMPILE);
+        vault.onEvent(HUB, _topics(42, MARKET), _down());
+        assertEq(vault.shieldCharges(), 1);
+        assertEq(vault.realizedLossToday(), 0);
+    }
+
+    function test_burn_clears_mint_amount() public {
+        vm.prank(operator);
+        vault.mintSet(MARKET, 1_000_000);
+        vm.prank(operator);
+        vault.burnSet(MARKET, 1_000_000);
+        assertEq(vault.lastMintAmount(), 0);
     }
 
     function test_onEvent_does_not_place_next_order() public {

@@ -185,7 +185,7 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
         const joinRows = await withPool(async (c) => {
           const r = await c.query(
             `SELECT r.vault, r.owner, r.state, r.bias, r.interval_sec, r.assets,
-                    l.state AS lap_state, l.pnl, l.entry_cost, l.redeem_value, l.created_at
+                    l.state AS lap_state, l.pnl, l.entry_cost, l.redeem_value, l.created_at, l.shielded
              FROM runners r
              LEFT JOIN laps l ON l.runner_id = r.id
              ORDER BY r.vault, l.lap_index ASC NULLS LAST`,
@@ -202,6 +202,7 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
             entry_cost: string | null;
             redeem_value: string | null;
             created_at: string | null;
+            shielded?: boolean | string | null;
           }>;
         });
         json(res, 200, {
@@ -216,6 +217,7 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
               bias: row.bias,
               interval_sec: row.interval_sec,
               assets: row.assets,
+              shielded: row.shielded,
             })),
           ),
           note: "win_rate = wins/(wins+losses); voids and open excluded; pnl is verified tape; no synthetic followers",

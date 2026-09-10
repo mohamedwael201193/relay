@@ -82,12 +82,28 @@ contract MockPool {
     function cancelOrder(uint128 orderId) external {
         lastCancel = orderId;
     }
+
+    uint256 public minted;
+    uint256 public burned;
+
+    function mintSet(address, address, uint256 amount) external {
+        minted += amount;
+    }
+
+    function burnSet(uint256 amount) external {
+        burned += amount;
+    }
 }
 
 contract MockMarket {
     bool public resolved;
     bool public voided;
     uint256[] public nums;
+    address public ot;
+
+    function setOutcomeToken(address a) external {
+        ot = a;
+    }
 
     function set(bool resolved_, bool voided_, uint256 n0, uint256 n1) external {
         resolved = resolved_;
@@ -120,7 +136,20 @@ contract MockMarket {
     }
 
     function outcomeToken() external view returns (address) {
-        return address(0);
+        return ot;
+    }
+}
+
+contract Mock6909 {
+    mapping(address => mapping(address => bool)) public isOperator;
+
+    function setOperator(address spender, bool approved) external returns (bool) {
+        isOperator[msg.sender][spender] = approved;
+        return true;
+    }
+
+    function balanceOf(address, uint256) external pure returns (uint256) {
+        return 0;
     }
 }
 

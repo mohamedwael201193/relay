@@ -54,7 +54,14 @@ export function RiskPolicySection() {
   const goScreen = useRelay((s) => s.goScreen);
 
   const live = runner?.config ?? config;
+  const streak = useRelay((s) => s.streak);
   const dirty = policyKey(live) !== policyKey(draft);
+  const liveShields =
+    isLiveMode() && streak.shieldsMax === 0
+      ? "NOT ON-CHAIN"
+      : isLiveMode()
+        ? `${streak.shields}/${streak.shieldsMax} ON-CHAIN`
+        : `${live.shieldsMax} MAX`;
 
   return (
     <Panel label="RISK POLICY · APPLIES ON NEXT DEPLOY">
@@ -81,7 +88,7 @@ export function RiskPolicySection() {
           <PolicyChip label="ASSETS" value={live.assets.join(" + ")} />
           <PolicyChip label="STREAK MULT" value={`+${Math.round(live.streakMultiplier * 100)}%`} tone="flame" />
           <PolicyChip label="MAX STAKE" value={`${Math.round(live.maxStakePct * 100)}%`} />
-          <PolicyChip label="SHIELDS" value={isLiveMode() ? "NOT ON-CHAIN" : `${live.shieldsMax} MAX`} tone="lime" />
+          <PolicyChip label="SHIELDS" value={liveShields} tone="lime" />
           <PolicyChip label="HEADROOM GATE" value={`${Math.round(live.headroomGatePct * 100)}%`} />
         </div>
 
@@ -201,7 +208,15 @@ export function RiskPolicySection() {
               />
             </FieldRow>
 
-            <FieldRow label="SHIELDS" live={isLiveMode() ? "NOT ON-CHAIN" : `${live.shieldsMax} MAX`} hint="NOT ENFORCED ON-CHAIN YET">
+            <FieldRow
+              label="SHIELDS"
+              live={liveShields}
+              hint={
+                isLiveMode() && streak.shieldsMax === 0
+                  ? "NEW VAULT BYTECODE CHARGES SHIELDS ON-CHAIN"
+                  : "FIRST LOSS CONSUMES A CHARGE; WINS REFILL UNTIL MAX"
+              }
+            >
               <ChipGroup
                 ariaLabel="Shields"
                 options={SHIELDS}

@@ -39,6 +39,9 @@ export function collateralCostForKind(kind: number, priceYes: bigint, qty: bigin
     if (priceYes >= unit) throw new Error("BUY_NO yes price must be < unit");
     return (qty * (unit - priceYes) + unit - 1n) / unit;
   }
+  if (kind === 1 || kind === 3) {
+    return 0n;
+  }
   throw new Error(`unsupported kind ${kind}`);
 }
 

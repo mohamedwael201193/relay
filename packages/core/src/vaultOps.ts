@@ -28,10 +28,15 @@ const vaultAbi = parseAbi([
   "function budget() view returns (uint256)",
   "function perWindowCap() view returns (uint256)",
   "function priceDecimals() view returns (uint8)",
+  "function outstandingNotional() view returns (uint256)",
+  "function maxOutstandingNotional() view returns (uint256)",
+  "function shieldCharges() view returns (uint8)",
+  "function shieldsMax() view returns (uint8)",
   "function deposit(uint256 amount)",
   "function withdraw(uint256 amount)",
   "function kill()",
   "function setOperatorNow(address next)",
+  "function refillShield()",
 ]);
 
 export function loadShannonDeployment(): ShannonDeployment {
@@ -79,7 +84,7 @@ export async function deployOwnedVault(
 
 export async function readVaultSnapshot(vault: Address) {
   const client = shannonHttpClient();
-  const [owner, operator, killed, collateral, budget, perWindowCap, priceDecimals, vaultBal, code] =
+  const [owner, operator, killed, collateral, budget, perWindowCap, priceDecimals, vaultBal, code, outstandingNotional] =
     await Promise.all([
       client.readContract({ address: vault, abi: vaultAbi, functionName: "owner" }),
       client.readContract({ address: vault, abi: vaultAbi, functionName: "operator" }),
@@ -90,7 +95,20 @@ export async function readVaultSnapshot(vault: Address) {
       client.readContract({ address: vault, abi: vaultAbi, functionName: "priceDecimals" }),
       erc20Balance(client, COLLATERAL, vault),
       client.getCode({ address: vault }),
+      client.readContract({ address: vault, abi: vaultAbi, functionName: "outstandingNotional" }),
     ]);
+  let shieldCharges = 0;
+  let shieldsMax = 0;
+  try {
+    shieldCharges = Number(
+      await client.readContract({ address: vault, abi: vaultAbi, functionName: "shieldCharges" }),
+    );
+    shieldsMax = Number(
+      await client.readContract({ address: vault, abi: vaultAbi, functionName: "shieldsMax" }),
+    );
+  } catch {
+    /* pre-shield bytecode */
+  }
   return {
     owner,
     operator,
@@ -101,6 +119,9 @@ export async function readVaultSnapshot(vault: Address) {
     priceDecimals,
     vaultBal: vaultBal.toString(),
     codeBytes: code && code !== "0x" ? (code.length - 2) / 2 : 0,
+    outstandingNotional: outstandingNotional.toString(),
+    shieldCharges,
+    shieldsMax,
   };
 }
 
@@ -239,6 +260,20 @@ export async function deployScratchAndKill(account: LocalAccount) {
     depositBlocked,
     depositTx: dep.transactionHash,
   };
+}
+
+export async function refillVaultShield(account: LocalAccount, vault: Address): Promise<boolean> {
+  const { encodeFunctionData } = await import("viem");
+  try {
+    const rcpt = await sendHttp(
+      account,
+      encodeFunctionData({ abi: vaultAbi, functionName: "refillShield" }),
+      { to: vault, gas: 5_000_000n },
+    );
+    return rcpt.status === "success";
+  } catch {
+    return false;
+  }
 }
 
 export function writeEvidence(name: string, data: unknown): void {

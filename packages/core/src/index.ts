@@ -15,6 +15,7 @@ export {
   fundVault,
   withdrawVault,
   deployScratchAndKill,
+  refillVaultShield,
   writeEvidence,
   runVaultFunding,
 } from "./vaultOps.js";

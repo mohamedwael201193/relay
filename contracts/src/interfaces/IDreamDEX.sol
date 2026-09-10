@@ -42,6 +42,10 @@ interface IBinaryPool {
     ) external payable returns (bool success, uint128 id);
 
     function cancelOrder(uint128 orderId) external;
+
+    function mintSet(address yesTo, address noTo, uint256 amount) external;
+
+    function burnSet(uint256 amount) external;
 }
 
 interface IBinaryMarket {

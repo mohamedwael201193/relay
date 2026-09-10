@@ -4,6 +4,7 @@ import {
   filledOrderNeedsSettle,
   policyStakeRaw,
   readVaultSnapshot,
+  refillVaultShield,
   runDoctor,
   runLiveOrder,
   settleFilledMarket,
@@ -23,10 +24,16 @@ import {
 import type { LocalAccount } from "viem/accounts";
 import type { Address, Hex } from "viem";
 
-function streakCurrent(laps: Array<{ state: string }>): number {
+function streakCurrent(laps: Array<{ state: string; shielded?: boolean | string | null }>): number {
   let run = 0;
   for (const lap of laps) {
     if (lap.state === "SETTLED_VOID") continue;
+    if (
+      lap.state === "SETTLED_LOSS" &&
+      (lap.shielded === true || lap.shielded === "t" || lap.shielded === "true")
+    ) {
+      continue;
+    }
     if (
       lap.state === "FILLED" ||
       lap.state === "ORDER_SUBMITTED" ||
@@ -62,8 +69,20 @@ function asAssets(raw: unknown): string[] {
 }
 
 function kindLabel(kind: unknown): "BUY_YES" | "BUY_NO" {
-  if (kind === 2 || kind === "2" || kind === "BUY_NO") return "BUY_NO";
+  const n = Number(kind);
+  if (kind === 2 || kind === "2" || kind === "BUY_NO" || kind === 1 || kind === "1" || kind === "SELL_YES") {
+    return "BUY_NO";
+  }
+  if (kind === 3 || kind === "3" || kind === "SELL_NO") return "BUY_YES";
+  if (n === 2 || n === 1) return "BUY_NO";
   return "BUY_YES";
+}
+
+function persistKind(kind: unknown): "BUY_YES" | "BUY_NO" | "SELL_YES" | "SELL_NO" {
+  const n = Number(kind);
+  if (kind === 1 || kind === "1" || kind === "SELL_YES" || n === 1) return "SELL_YES";
+  if (kind === 3 || kind === "3" || kind === "SELL_NO" || n === 3) return "SELL_NO";
+  return kindLabel(kind);
 }
 
 function kindNumber(kind: unknown): number {
@@ -151,6 +170,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
         log("settlement_pending", { runnerId: runner.id, marketId: lastOrder.market_id });
         return { action: "settlement_pending", runnerId: runner.id };
       }
+      const chargesBefore = Number(snap.shieldCharges ?? 0);
       const nextState: RunnerState = settlement.voided
         ? "SETTLED_VOID"
         : settlement.outcome === "loss"
@@ -158,6 +178,17 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
           : settlement.redeemed
             ? "REDEEMED"
             : "SETTLED_WIN";
+      snap = await readVaultSnapshot(vault);
+      const shielded =
+        nextState === "SETTLED_LOSS" && Number(snap.shieldCharges ?? 0) < chargesBefore;
+      if (
+        (nextState === "SETTLED_WIN" || nextState === "REDEEMED") &&
+        Number(snap.shieldsMax ?? 0) > 0 &&
+        Number(snap.shieldCharges ?? 0) < Number(snap.shieldsMax ?? 0)
+      ) {
+        await refillVaultShield(account, vault);
+        snap = await readVaultSnapshot(vault);
+      }
       const entryCost =
         lastOrder.price && lastOrder.filled
           ? entryCostRaw(lastOrder.kind, lastOrder.price, lastOrder.filled)
@@ -178,6 +209,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
           entryCost != null
             ? (BigInt(redeemValue) - BigInt(entryCost)).toString()
             : null,
+        shielded,
         settlement: {
           resolved: settlement.resolved,
           voided: settlement.voided,
@@ -219,7 +251,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       intervalSec: asIntervalSec(runner.interval_sec),
       bias: asBias(runner.bias),
       assets: asAssets(runner.assets),
-      iocOnly: false,
+      iocOnly: BigInt(snap.outstandingNotional || "0") > 0n,
       skipMarketIds: skip,
       waitMs: 90_000,
       evidenceName: "shannon-worker-order.json",
@@ -234,7 +266,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     }
     const filled = attempt.fillClass === "FILL" || attempt.fillClass === "PARTIAL_FILL";
     const nextIndex = (lastOrder?.lap_index ?? 0) + 1;
-    const kind = kindLabel(attempt.kind);
+    const kind = persistKind(attempt.kind);
     await persistWorkerStep({
       runnerId: runner.id,
       vault,
@@ -246,7 +278,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       asset: placed.asset ?? null,
       intervalSec: placed.intervalSec ?? null,
       entryCost: filled
-        ? entryCostRaw(kind, attempt.price, attempt.filled)
+        ? entryCostRaw(kindLabel(attempt.kind), attempt.price, attempt.filled)
         : null,
       order: {
         attemptId: attempt.correlationId,

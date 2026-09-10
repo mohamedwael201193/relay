@@ -14,6 +14,24 @@ describe("streakFromHistory", () => {
     ]);
     expect(streak).toEqual({ current: 1, best: 2 });
   });
+
+  it("does not break the run on a shielded loss", () => {
+    const streak = streakFromHistory([
+      { id: "1", lap_index: 1, market_id: "0x1", pool: null, state: "SETTLED_WIN", correlation_id: null, created_at: "" },
+      {
+        id: "2",
+        lap_index: 2,
+        market_id: "0x2",
+        pool: null,
+        state: "SETTLED_LOSS",
+        correlation_id: null,
+        created_at: "",
+        shielded: true,
+      },
+      { id: "3", lap_index: 3, market_id: "0x3", pool: null, state: "SETTLED_WIN", correlation_id: null, created_at: "" },
+    ]);
+    expect(streak).toEqual({ current: 2, best: 2 });
+  });
 });
 
 describe("assetFromMarket", () => {
@@ -108,6 +126,10 @@ describe("sideFromKind", () => {
   it("maps BUY_YES to UP and BUY_NO to DOWN", () => {
     expect(sideFromKind("BUY_YES")).toBe("UP");
     expect(sideFromKind("BUY_NO")).toBe("DOWN");
+    expect(sideFromKind("SELL_NO")).toBe("UP");
+    expect(sideFromKind("SELL_YES")).toBe("DOWN");
+    expect(sideFromKind(1)).toBe("DOWN");
+    expect(sideFromKind(3)).toBe("UP");
   });
 });
 

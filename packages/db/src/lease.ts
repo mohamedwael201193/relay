@@ -147,7 +147,7 @@ export async function getRunnerByVault(vault: string): Promise<RunnerRow | null>
 export async function listLaps(runnerId: string) {
   return withPool(async (c) => {
     const r = await c.query(
-      `SELECT id, lap_index, market_id, pool, state, correlation_id, created_at, asset, interval_sec, entry_cost, redeem_value, pnl
+      `SELECT id, lap_index, market_id, pool, state, correlation_id, created_at, asset, interval_sec, entry_cost, redeem_value, pnl, shielded
        FROM laps WHERE runner_id = $1 ORDER BY lap_index ASC`,
       [runnerId],
     );
@@ -191,6 +191,7 @@ export async function persistWorkerStep(input: {
   entryCost?: string | null;
   redeemValue?: string | null;
   pnl?: string | null;
+  shielded?: boolean;
   order?: {
     attemptId: string;
     txHash: string;
@@ -212,8 +213,8 @@ export async function persistWorkerStep(input: {
 }): Promise<void> {
   await withPool(async (c) => {
     const lap = await c.query<{ id: string }>(
-      `INSERT INTO laps (runner_id, lap_index, market_id, pool, state, correlation_id, asset, interval_sec, entry_cost, redeem_value, pnl)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `INSERT INTO laps (runner_id, lap_index, market_id, pool, state, correlation_id, asset, interval_sec, entry_cost, redeem_value, pnl, shielded)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (runner_id, lap_index)
        DO UPDATE SET
          market_id = EXCLUDED.market_id,
@@ -223,7 +224,8 @@ export async function persistWorkerStep(input: {
          interval_sec = COALESCE(EXCLUDED.interval_sec, laps.interval_sec),
          entry_cost = COALESCE(EXCLUDED.entry_cost, laps.entry_cost),
          redeem_value = COALESCE(EXCLUDED.redeem_value, laps.redeem_value),
-         pnl = COALESCE(EXCLUDED.pnl, laps.pnl)
+         pnl = COALESCE(EXCLUDED.pnl, laps.pnl),
+         shielded = laps.shielded OR EXCLUDED.shielded
        RETURNING id`,
       [
         input.runnerId,
@@ -237,6 +239,7 @@ export async function persistWorkerStep(input: {
         input.entryCost ?? null,
         input.redeemValue ?? null,
         input.pnl ?? null,
+        input.shielded ?? false,
       ],
     );
     const lapId = lap.rows[0].id;
