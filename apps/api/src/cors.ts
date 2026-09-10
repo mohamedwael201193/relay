@@ -14,6 +14,7 @@ export function parseCorsOrigins(raw: string | undefined): string[] {
     "http://127.0.0.1:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3001",
+    "https://relay-silk-one.vercel.app",
   ];
   return [...new Set([...defaults, ...extra])];
 }

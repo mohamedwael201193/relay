@@ -8,6 +8,13 @@ describe("CORS allow-list", () => {
     expect(allowOrigin("http://localhost:3000", allowed)).toBe("http://localhost:3000");
   });
 
+  it("always includes the Vercel production origin", () => {
+    const allowed = parseCorsOrigins("");
+    expect(allowOrigin("https://relay-silk-one.vercel.app", allowed)).toBe(
+      "https://relay-silk-one.vercel.app",
+    );
+  });
+
   it("allows the frontend request-id header", () => {
     expect(CORS_ALLOW_HEADERS).toContain("x-relay-request-id");
   });
