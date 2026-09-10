@@ -440,6 +440,15 @@ export function mockSlice(set: StoreApi<RelayStore>["setState"], get: StoreApi<R
     });
   },
 
+  chargeShields: () => {
+    const s = get();
+    const n = s.draftConfig.shieldsMax;
+    set({
+      streak: { ...s.streak, shieldsMax: n, shields: Math.max(s.streak.shields, n) },
+      config: { ...s.config, shieldsMax: n },
+    });
+  },
+
   /* social … */
   boostRunner: (runnerId, amount) => {
     const s = get();

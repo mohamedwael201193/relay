@@ -4,4 +4,5 @@ export type LiveHandlers = {
   resume: () => Promise<void>;
   kill: () => Promise<void>;
   withdraw: () => Promise<void>;
+  chargeShields?: () => Promise<void>;
 };

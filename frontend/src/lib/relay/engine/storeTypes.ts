@@ -86,6 +86,7 @@ export interface RelayStore {
   resumeRunner: () => void;
   stopRunner: () => void;
   withdraw: () => void;
+  chargeShields: () => void;
 
   boostRunner: (runnerId: string, amount: number) => void;
   toggleFollow: (runnerId: string) => void;

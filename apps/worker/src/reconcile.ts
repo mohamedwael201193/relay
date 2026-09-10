@@ -161,6 +161,17 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       await go("WAITING_SETTLEMENT", { lastMarketId: lastOrder.market_id });
       const settlement = await settleFilledMarket(account, lastOrder.market_id as Hex, { vault });
       if (!settlement.settled) {
+        let openPrice: string | null = null;
+        let closePrice: string | null = null;
+        let oracleQuestionId: string | null = null;
+        try {
+          const meta = await marketOracleMeta(lastOrder.market_id);
+          openPrice = meta.open != null ? String(meta.open) : null;
+          closePrice = meta.close != null ? String(meta.close) : null;
+          oracleQuestionId = meta.oracleQuestionId;
+        } catch {
+          /* indexer optional */
+        }
         await persistWorkerStep({
           runnerId: runner.id,
           vault,
@@ -168,6 +179,9 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
           marketId: lastOrder.market_id,
           correlationId: `settle-wait:${lastOrder.tx_hash}`,
           state: "WAITING_SETTLEMENT",
+          openPrice,
+          closePrice,
+          oracleQuestionId,
         });
         log("settlement_pending", { runnerId: runner.id, marketId: lastOrder.market_id });
         return { action: "settlement_pending", runnerId: runner.id };
@@ -355,9 +369,14 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
 export async function runWorkerLoop(account: LocalAccount, opts: { once?: boolean; intervalMs?: number } = {}) {
   const intervalMs = opts.intervalMs ?? 15_000;
   for (;;) {
+    const deadline = Date.now() + 25_000;
     try {
-      const out = await reconcileOnce(account);
-      log("tick", out);
+      while (Date.now() < deadline) {
+        const out = await reconcileOnce(account);
+        log("tick", out);
+        if (out.action === "no_lease" || out.action === "doctor_block") break;
+        if (out.action === "filled" || out.action === "placed" || out.action === "no_attempt") break;
+      }
     } catch (e) {
       log("tick_error", { error: (e as Error).message });
     }

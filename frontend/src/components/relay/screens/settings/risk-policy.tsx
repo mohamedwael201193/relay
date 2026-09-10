@@ -239,8 +239,19 @@ export function RiskPolicySection() {
           >
             APPLY ON NEXT DEPLOY →
           </button>
+          {isLiveMode() && streak.shieldsMax === 0 && draft.shieldsMax > 0 ? (
+            <button
+              type="button"
+              onClick={() => useRelay.getState().chargeShields()}
+              className="mlabel mt-3 w-full rounded-xl border-2 border-lined bg-panel2 py-3.5 text-cream transition-colors hover:border-lime hover:text-lime focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime"
+            >
+              CHARGE SHIELDS ON THIS VAULT
+            </button>
+          ) : null}
           <p className="data mt-3 text-xs leading-relaxed text-foam">
-            changes never apply mid-run — your live runner keeps its deployment config.
+            {isLiveMode() && streak.shieldsMax === 0
+              ? "bias, budget and cadence stay locked mid-run. shields can be charged on this vault if it has the new bytecode."
+              : "changes never apply mid-run — your live runner keeps its deployment config."}
           </p>
         </div>
       </div>

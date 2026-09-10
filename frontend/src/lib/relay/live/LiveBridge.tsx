@@ -576,6 +576,29 @@ export function LiveBridge() {
           reportApiError((e as Error).message);
         }
       },
+      chargeShields: async () => {
+        try {
+          const net = await relayApi.network();
+          const { walletClient, publicClient, owner } = await clients(net);
+          const listed = await relayApi.runnersByOwner(owner);
+          const vault = pickOwnedVault(listed.runners, useRelay.getState().vaultAddress);
+          if (!vault || isOpsVault(vault)) return;
+          const n = Math.max(0, Math.min(3, useRelay.getState().draftConfig.shieldsMax));
+          if (n <= 0) return;
+          await send(walletClient, publicClient, {
+            to: vault as Address,
+            data: encodeFunctionData({
+              abi: vaultWriteAbi,
+              functionName: "setShieldsMax",
+              args: [n],
+            }),
+          });
+          await refreshRunner(net, owner, vault);
+        } catch (e) {
+          phase("Failed", "failed");
+          reportApiError((e as Error).message);
+        }
+      },
     });
     return () => registerLiveHandlers(null);
   }, []);

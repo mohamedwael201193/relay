@@ -85,7 +85,22 @@ export async function claimRunner(vault?: string): Promise<RunnerRow | null> {
          WHERE state = ANY($2::text[])
            AND (lease_until IS NULL OR lease_until < now())
            AND ($1::text IS NULL OR lower(vault) = lower($1))
-         ORDER BY updated_at ASC
+         ORDER BY
+           CASE
+             WHEN state IN (
+               'FILLED',
+               'PARTIAL_FILL',
+               'WAITING_SETTLEMENT',
+               'REDEEMING',
+               'REDEEMED',
+               'SETTLED_WIN',
+               'SETTLED_LOSS',
+               'SETTLED_VOID',
+               'REARMING'
+             ) THEN 0
+             ELSE 1
+           END,
+           updated_at ASC
          FOR UPDATE SKIP LOCKED
          LIMIT 1
        )
