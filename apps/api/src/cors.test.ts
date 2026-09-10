@@ -24,4 +24,12 @@ describe("CORS allow-list", () => {
     expect(allowOrigin("https://evil.example", allowed)).toBeNull();
     expect(allowOrigin("https://relay.example", allowed)).toBe("https://relay.example");
   });
+
+  it("allows this project's Vercel preview hosts", () => {
+    const allowed = parseCorsOrigins("");
+    expect(
+      allowOrigin("https://relay-n6es4zjyk-mohamedwael201193s-projects.vercel.app", allowed),
+    ).toBe("https://relay-n6es4zjyk-mohamedwael201193s-projects.vercel.app");
+    expect(allowOrigin("https://evil-mohamedwael201193s-projects.vercel.app", allowed)).toBeNull();
+  });
 });

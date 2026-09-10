@@ -22,6 +22,9 @@ export function parseCorsOrigins(raw: string | undefined): string[] {
 export function allowOrigin(origin: string | undefined, allowed: string[]): string | null {
   if (!origin) return null;
   if (allowed.includes(origin)) return origin;
+  if (/^https:\/\/relay-[a-z0-9]+-mohamedwael201193s-projects\.vercel\.app$/i.test(origin)) {
+    return origin;
+  }
   return null;
 }
 
