@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   EXPECTED_SHANNON_DECIMALS,
   SHANNON_CHAIN_ID,
@@ -12,7 +13,6 @@ import { getRunnerByVault, listLaps, listProof, pingDb, setRunnerState, withPool
 
 loadEnv();
 
-const port = Number(process.env.PORT ?? 8787);
 const dep = (() => {
   try {
     return loadShannonDeployment();
@@ -38,7 +38,8 @@ function doctorSummary(): { failClosed: boolean | null; generatedAt: string | nu
   }
 }
 
-const server = createServer(async (req, res) => {
+export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
+  const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   try {
     if (url.pathname === "/health") {
@@ -48,6 +49,7 @@ const server = createServer(async (req, res) => {
         service: "relay-api",
         chainId: SHANNON_CHAIN_ID,
         db: true,
+        worker: process.env.RELAY_RUN_WORKER === "true",
       });
       return;
     }
@@ -155,8 +157,16 @@ const server = createServer(async (req, res) => {
   } catch (e) {
     json(res, 500, { error: "internal", category: (e as Error).name });
   }
-});
+  });
 
-server.listen(port, () => {
-  console.log(JSON.stringify({ listening: port }));
-});
+  server.listen(listenPort, () => {
+    console.log(JSON.stringify({ listening: listenPort, worker: process.env.RELAY_RUN_WORKER === "true" }));
+  });
+  return server;
+}
+
+const thisFile = fileURLToPath(import.meta.url);
+const invoked = process.argv[1] ? resolve(process.argv[1]) : "";
+if (invoked && thisFile.toLowerCase() === invoked.toLowerCase()) {
+  startApi();
+}

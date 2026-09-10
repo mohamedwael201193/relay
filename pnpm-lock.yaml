@@ -23,6 +23,9 @@ importers:
       tsx:
         specifier: ^4.20.5
         version: 4.23.13
+      viem:
+        specifier: ^2.37.5
+        version: 2.56.3(typescript@5.9.3)
     devDependencies:
       '@types/node':
         specifier: ^24.3.0

@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     buildCommand: pnpm install --frozen-lockfile --prod=false
-    startCommand: pnpm api
+    startCommand: pnpm start
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
@@ -13,11 +13,13 @@ services:
         value: shannon
       - key: MAINNET_TRADING_ENABLED
         value: "false"
+      - key: RELAY_RUN_WORKER
+        value: "true"
 
   - type: worker
     name: relay-worker
     runtime: node
-    plan: free
+    plan: starter
     buildCommand: pnpm install --frozen-lockfile --prod=false
     startCommand: pnpm worker
     envVars:

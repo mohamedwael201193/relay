@@ -95,6 +95,7 @@ async function main() {
     ]),
     { key: "RELAY_NETWORK", value: "shannon" },
     { key: "MAINNET_TRADING_ENABLED", value: "false" },
+    { key: "RELAY_RUN_WORKER", value: "true" },
     { key: "NODE_VERSION", value: "20" },
   ];
 
@@ -137,7 +138,7 @@ async function main() {
     };
   }
 
-  const api = await ensure("relay-api", "web_service", "pnpm api", "/health");
+  const api = await ensure("relay-api", "web_service", "pnpm start", "/health");
   const worker = await ensure("relay-worker", "background_worker", "pnpm worker");
 
   const evidence = {

@@ -13,7 +13,8 @@
     "@relay/core": "workspace:*",
     "@relay/db": "workspace:*",
     "@somnia-chain/reactivity-contracts": "0.2.1",
-    "tsx": "^4.20.5"
+    "tsx": "^4.20.5",
+    "viem": "^2.37.5"
   },
   "scripts": {
     "doctor": "tsx scripts/doctor.ts",
@@ -26,8 +27,10 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:persist-gold": "tsx scripts/persist-gold.ts",
     "api": "tsx apps/api/src/server.ts",
+    "start": "tsx scripts/render-web.ts",
     "worker": "tsx apps/worker/src/worker.ts",
     "worker:once": "tsx apps/worker/src/worker.ts --once",
+    "soak": "tsx scripts/soak.ts",
     "reactivity:probe": "tsx scripts/reactivity-probe.ts",
     "gold:e2e": "tsx scripts/gold-e2e.ts",
     "list:live": "tsx scripts/list-live.ts",
