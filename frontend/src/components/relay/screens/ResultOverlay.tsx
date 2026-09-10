@@ -21,7 +21,7 @@ import {
   VerifiedSeal,
 } from "@/components/relay/identity/identity";
 import { money, price as fmtPrice, shortHash, signed } from "@/lib/relay/format";
-import { explorerTxUrl } from "@/lib/relay/config/network";
+import { explorerTxUrl, oracleQuestionUrl } from "@/lib/relay/config/network";
 import { CountUp } from "./live/CountUp";
 import { cn } from "@/lib/utils";
 import type { LapResult } from "@/lib/relay/types";
@@ -231,7 +231,18 @@ function ResultBody({
           <ProofRow label="CLAIM" hash={r.proof.claimTx} />
         </ul>
         <div className="mt-3 pt-2.5 border-t border-cream/15 mlabel text-foam/70 leading-relaxed">
-          ORACLE QUESTION {shortHash(r.proof.oracleQuestionId)}
+          {oracleQuestionUrl(r.proof.oracleQuestionId) ? (
+            <a
+              href={oracleQuestionUrl(r.proof.oracleQuestionId)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-cream/90 underline decoration-cream/25 underline-offset-2 hover:decoration-cream"
+            >
+              ORACLE QUESTION {r.proof.oracleQuestionId}
+            </a>
+          ) : (
+            <>ORACLE QUESTION —</>
+          )}
           <br />
           SOMNIA REACTIVITY · ANSWERDELIVERED
         </div>

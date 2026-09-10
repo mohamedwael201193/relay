@@ -135,6 +135,11 @@ export type LiveMarketRow = {
   expiry?: string;
   onchainStatus: string;
   pool: string;
+  openPrice?: number | null;
+  closePrice?: number | null;
+  livePrice?: number | null;
+  priceHistory?: { t: number; p: number }[];
+  oracleQuestionId?: string | null;
 };
 
 export type ArenaRow = {
@@ -171,6 +176,9 @@ export type HistoryLap = {
   redeem_value?: string | null;
   pnl?: string | null;
   shielded?: boolean | null;
+  open_price?: string | null;
+  close_price?: string | null;
+  oracle_question_id?: string | null;
 };
 
 export type ProofBundle = {

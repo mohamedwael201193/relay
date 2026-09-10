@@ -120,6 +120,36 @@ describe("lapsFromHistory", () => {
     expect(laps[0].streakAfter).toBe(1);
     expect(laps[0].proof.status).toBe("VERIFIED");
   });
+
+  it("uses persisted open/close prices and oracle question id, never $0 placeholders", () => {
+    const settled: HistoryLap[] = [
+      {
+        ...history[0],
+        state: "SETTLED_WIN",
+        pnl: "250",
+        open_price: "77165.07",
+        close_price: "77210.4",
+        oracle_question_id: "17539064",
+      },
+    ];
+    const withSettle: ProofBundle = {
+      ...proof,
+      settlements: [
+        {
+          market_id: "0xeth",
+          resolved: true,
+          voided: false,
+          redeem_tx: "0xredeem",
+          created_at: "2026-09-10T08:05:00.000Z",
+          lap_index: 1,
+        },
+      ],
+    };
+    const laps = lapsFromHistory(settled, withSettle, []);
+    expect(laps[0].market.openPrice).toBe(77165.07);
+    expect(laps[0].market.closePrice).toBe(77210.4);
+    expect(laps[0].proof.oracleQuestionId).toBe("17539064");
+  });
 });
 
 describe("sideFromKind", () => {

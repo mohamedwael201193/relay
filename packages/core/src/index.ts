@@ -3,6 +3,12 @@ export * from "./addresses.js";
 export * from "./rpc.js";
 export * from "./onchain.js";
 export * from "./exchange.js";
+export {
+  scaleOracleNumeric,
+  humanFeedPrice,
+  marketBoundaryPrices,
+  marketOracleMeta,
+} from "./oraclePrice.js";
 export { runShannonHarness } from "./harness.js";
 export { runDoctor, printDoctor, type DoctorReport, type Check } from "./doctor.js";
 export { runShannonFaucet } from "./faucet.js";
@@ -16,6 +22,7 @@ export {
   withdrawVault,
   deployScratchAndKill,
   refillVaultShield,
+  registerMarketSubscription,
   writeEvidence,
   runVaultFunding,
 } from "./vaultOps.js";

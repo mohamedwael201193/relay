@@ -2,9 +2,11 @@ import {
   assertShannonExecution,
   collateralCostForKind,
   filledOrderNeedsSettle,
+  marketOracleMeta,
   policyStakeRaw,
   readVaultSnapshot,
   refillVaultShield,
+  registerMarketSubscription,
   runDoctor,
   runLiveOrder,
   settleFilledMarket,
@@ -196,6 +198,17 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       const redeemValue = (
         BigInt(settlement.vaultCollateralAfter) - BigInt(settlement.vaultCollateralBefore)
       ).toString();
+      let openPrice: string | null = null;
+      let closePrice: string | null = null;
+      let oracleQuestionId: string | null = null;
+      try {
+        const meta = await marketOracleMeta(lastOrder.market_id);
+        openPrice = meta.open != null ? String(meta.open) : null;
+        closePrice = meta.close != null ? String(meta.close) : null;
+        oracleQuestionId = meta.oracleQuestionId;
+      } catch {
+        /* indexer optional */
+      }
       await persistWorkerStep({
         runnerId: runner.id,
         vault,
@@ -210,6 +223,9 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
             ? (BigInt(redeemValue) - BigInt(entryCost)).toString()
             : null,
         shielded,
+        openPrice,
+        closePrice,
+        oracleQuestionId,
         settlement: {
           resolved: settlement.resolved,
           voided: settlement.voided,
@@ -267,6 +283,15 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     const filled = attempt.fillClass === "FILL" || attempt.fillClass === "PARTIAL_FILL";
     const nextIndex = (lastOrder?.lap_index ?? 0) + 1;
     const kind = persistKind(attempt.kind);
+    let openPrice: string | null = null;
+    let oracleQuestionId: string | null = null;
+    try {
+      const meta = await marketOracleMeta(attempt.marketId);
+      openPrice = meta.open != null ? String(meta.open) : null;
+      oracleQuestionId = meta.oracleQuestionId;
+    } catch {
+      /* indexer optional */
+    }
     await persistWorkerStep({
       runnerId: runner.id,
       vault,
@@ -280,6 +305,8 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       entryCost: filled
         ? entryCostRaw(kindLabel(attempt.kind), attempt.price, attempt.filled)
         : null,
+      openPrice,
+      oracleQuestionId,
       order: {
         attemptId: attempt.correlationId,
         txHash: attempt.placeTx,
@@ -297,6 +324,16 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       lastMarketId: attempt.marketId,
       bumpLap: true,
     });
+    if (filled) {
+      const sub = await registerMarketSubscription(account, vault, attempt.marketId);
+      log("reactivity_register", {
+        runnerId: runner.id,
+        marketId: attempt.marketId,
+        tx: sub.tx,
+        subscriptionId: sub.subscriptionId,
+        skipped: sub.skipped,
+      });
+    }
     log("placed", {
       runnerId: runner.id,
       marketId: attempt.marketId,

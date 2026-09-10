@@ -56,6 +56,12 @@ export function explorerTxUrl(hash: string | undefined | null): string | null {
   return `${SHANNON_PUBLIC.explorer}/tx/${hash}`;
 }
 
+/** Official Somnia oracle graph for a decimal question id. Never invent a placeholder. */
+export function oracleQuestionUrl(id: string | undefined | null): string | null {
+  if (!id || id === "0") return null;
+  return `https://prd.oracle.somnia.host/questions/${id}?view=graph`;
+}
+
 export function publicEnv() {
   return {
     apiUrl: (process.env.NEXT_PUBLIC_RELAY_API_URL ?? "https://relay-api-71gi.onrender.com").replace(/\/$/, ""),

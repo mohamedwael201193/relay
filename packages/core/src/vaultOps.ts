@@ -276,6 +276,59 @@ export async function refillVaultShield(account: LocalAccount, vault: Address): 
   }
 }
 
+const managerWriteAbi = parseAbi([
+  "function register(address vault, bytes32 marketId) returns (uint256)",
+  "function subscriptionOf(bytes32) view returns (uint256)",
+]);
+
+/** Subscribe the vault to OracleHub AnswerDelivered for this market. Shared-stake manager pays; no-ops if already registered or unfunded. */
+export async function registerMarketSubscription(
+  account: LocalAccount,
+  vault: Address,
+  marketId: Hex,
+): Promise<{ tx: Hex | null; subscriptionId: string | null; skipped: string | null }> {
+  const dep = loadShannonDeployment();
+  const client = shannonHttpClient();
+  const { keccak256, encodePacked, encodeFunctionData } = await import("viem");
+  const k = keccak256(encodePacked(["address", "bytes32"], [vault, marketId]));
+  const existing = await client.readContract({
+    address: dep.manager,
+    abi: managerWriteAbi,
+    functionName: "subscriptionOf",
+    args: [k],
+  });
+  if (existing !== 0n) {
+    return { tx: null, subscriptionId: existing.toString(), skipped: "already_registered" };
+  }
+  const bal = await client.getBalance({ address: dep.manager });
+  if (bal < 32n * 10n ** 18n) {
+    return { tx: null, subscriptionId: null, skipped: "manager_stake_low" };
+  }
+  try {
+    const rcpt = await sendHttp(
+      account,
+      encodeFunctionData({
+        abi: managerWriteAbi,
+        functionName: "register",
+        args: [vault, marketId],
+      }),
+      { to: dep.manager, gas: 10_000_000n },
+    );
+    if (rcpt.status !== "success") {
+      return { tx: rcpt.transactionHash, subscriptionId: null, skipped: "register_reverted" };
+    }
+    const id = await client.readContract({
+      address: dep.manager,
+      abi: managerWriteAbi,
+      functionName: "subscriptionOf",
+      args: [k],
+    });
+    return { tx: rcpt.transactionHash, subscriptionId: id.toString(), skipped: null };
+  } catch (e) {
+    return { tx: null, subscriptionId: null, skipped: (e as Error).message.slice(0, 180) };
+  }
+}
+
 export function writeEvidence(name: string, data: unknown): void {
   mkdirSync(resolve(process.cwd(), "docs/evidence"), { recursive: true });
   writeFileSync(resolve(process.cwd(), "docs/evidence", name), JSON.stringify(data, null, 2));

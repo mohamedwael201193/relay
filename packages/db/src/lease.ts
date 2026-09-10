@@ -147,7 +147,7 @@ export async function getRunnerByVault(vault: string): Promise<RunnerRow | null>
 export async function listLaps(runnerId: string) {
   return withPool(async (c) => {
     const r = await c.query(
-      `SELECT id, lap_index, market_id, pool, state, correlation_id, created_at, asset, interval_sec, entry_cost, redeem_value, pnl, shielded
+      `SELECT id, lap_index, market_id, pool, state, correlation_id, created_at, asset, interval_sec, entry_cost, redeem_value, pnl, shielded, open_price, close_price, oracle_question_id
        FROM laps WHERE runner_id = $1 ORDER BY lap_index ASC`,
       [runnerId],
     );
@@ -192,6 +192,9 @@ export async function persistWorkerStep(input: {
   redeemValue?: string | null;
   pnl?: string | null;
   shielded?: boolean;
+  openPrice?: string | null;
+  closePrice?: string | null;
+  oracleQuestionId?: string | null;
   order?: {
     attemptId: string;
     txHash: string;
@@ -213,8 +216,8 @@ export async function persistWorkerStep(input: {
 }): Promise<void> {
   await withPool(async (c) => {
     const lap = await c.query<{ id: string }>(
-      `INSERT INTO laps (runner_id, lap_index, market_id, pool, state, correlation_id, asset, interval_sec, entry_cost, redeem_value, pnl, shielded)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      `INSERT INTO laps (runner_id, lap_index, market_id, pool, state, correlation_id, asset, interval_sec, entry_cost, redeem_value, pnl, shielded, open_price, close_price, oracle_question_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT (runner_id, lap_index)
        DO UPDATE SET
          market_id = EXCLUDED.market_id,
@@ -225,7 +228,10 @@ export async function persistWorkerStep(input: {
          entry_cost = COALESCE(EXCLUDED.entry_cost, laps.entry_cost),
          redeem_value = COALESCE(EXCLUDED.redeem_value, laps.redeem_value),
          pnl = COALESCE(EXCLUDED.pnl, laps.pnl),
-         shielded = laps.shielded OR EXCLUDED.shielded
+         shielded = laps.shielded OR EXCLUDED.shielded,
+         open_price = COALESCE(EXCLUDED.open_price, laps.open_price),
+         close_price = COALESCE(EXCLUDED.close_price, laps.close_price),
+         oracle_question_id = COALESCE(EXCLUDED.oracle_question_id, laps.oracle_question_id)
        RETURNING id`,
       [
         input.runnerId,
@@ -240,6 +246,9 @@ export async function persistWorkerStep(input: {
         input.redeemValue ?? null,
         input.pnl ?? null,
         input.shielded ?? false,
+        input.openPrice ?? null,
+        input.closePrice ?? null,
+        input.oracleQuestionId ?? null,
       ],
     );
     const lapId = lap.rows[0].id;

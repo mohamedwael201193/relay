@@ -6,6 +6,7 @@ import { createExchange } from "./exchange.js";
 import { envString, loadEnv } from "./env.js";
 import { getBinaryBookParamsHttp, getMarketOnchainHttp } from "./onchain.js";
 import { shannonClient } from "./rpc.js";
+import { humanFeedPrice, scaleOracleNumeric } from "./oraclePrice.js";
 
 export type HarnessRow = {
   marketId: string;
@@ -24,6 +25,11 @@ export type HarnessRow = {
   minQuantity: string;
   fees: unknown;
   bookLevels: { bids: number; asks: number } | null;
+  openPrice: number | null;
+  closePrice: number | null;
+  livePrice: number | null;
+  priceHistory: { t: number; p: number }[];
+  oracleQuestionId: string | null;
 };
 
 export async function runShannonHarness(limit = 5): Promise<{
@@ -36,9 +42,31 @@ export async function runShannonHarness(limit = 5): Promise<{
   const rpc = envString("SOMNIA_SHANNON_RPC_URL", DEFAULT_SHANNON_RPC)!;
   const sh = shannonClient(rpc);
   const live = await exchange.client.listLiveBinaryMarkets({ limit: 25 });
+  const slice = live.slice(0, limit);
+  const ids = slice.map((m) => m.marketId).filter(Boolean) as string[];
+  const [opening, resolution, btcFeed, ethFeed, btcCandles, ethCandles] = await Promise.all([
+    ids.length
+      ? exchange.client.getOpeningPrices(ids).catch(() => ({}) as Record<string, string | null>)
+      : ({} as Record<string, string | null>),
+    ids.length
+      ? exchange.client.getResolutionPrices(ids).catch(() => ({}) as Record<string, string | null>)
+      : ({} as Record<string, string | null>),
+    exchange.client.fetchPriceFeedInfo("BTC").catch(() => null),
+    exchange.client.fetchPriceFeedInfo("ETH").catch(() => null),
+    exchange.client.fetchPriceCandles("BTC", "M1", { limit: 60 }).catch(() => []),
+    exchange.client.fetchPriceCandles("ETH", "M1", { limit: 60 }).catch(() => []),
+  ]);
+  const feedPrice = {
+    BTC: humanFeedPrice(btcFeed?.latest?.price),
+    ETH: humanFeedPrice(ethFeed?.latest?.price),
+  };
+  const feedHistory = {
+    BTC: btcCandles.map((c) => ({ t: c.bucketStart * 1000, p: c.close })),
+    ETH: ethCandles.map((c) => ({ t: c.bucketStart * 1000, p: c.close })),
+  };
   const rows: HarnessRow[] = [];
 
-  for (const m of live.slice(0, limit)) {
+  for (const m of slice) {
     if (!m.marketId || !m.poolAddress) continue;
     const onchain = await getMarketOnchainHttp(
       sh,
@@ -62,6 +90,8 @@ export async function runShannonHarness(limit = 5): Promise<{
     } catch {
       bookLevels = null;
     }
+    const id = m.marketId.toLowerCase();
+    const asset = (m.asset ?? "").toUpperCase() === "ETH" ? "ETH" : "BTC";
     rows.push({
       marketId: m.marketId,
       indexerStatus: m.status,
@@ -79,6 +109,14 @@ export async function runShannonHarness(limit = 5): Promise<{
       minQuantity: book.minQuantity.toString(),
       fees,
       bookLevels,
+      openPrice: scaleOracleNumeric(opening[id] ?? opening[m.marketId]),
+      closePrice: scaleOracleNumeric(resolution[id] ?? resolution[m.marketId]),
+      livePrice: feedPrice[asset],
+      priceHistory: feedHistory[asset],
+      oracleQuestionId:
+        onchain.oracleQuestionId && onchain.oracleQuestionId !== 0n
+          ? onchain.oracleQuestionId.toString()
+          : null,
     });
   }
 

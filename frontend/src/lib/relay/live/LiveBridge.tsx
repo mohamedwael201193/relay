@@ -204,6 +204,10 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
       prev.lastResult.lap !== builtResult!.lap ||
       prev.lastResult.outcome !== builtResult!.outcome);
   const lapNotes = isNewResult ? notificationsFromLaps(prev.laps, mappedLaps) : [];
+  const lastId = (row.last_market_id ?? "").toLowerCase();
+  const histRow =
+    marketsRows.find((m) => m.marketId.toLowerCase() === lastId) ?? marketsRows[0];
+  const priceHistory = (histRow?.priceHistory ?? []).filter((p) => Number.isFinite(p.p) && p.p > 0);
   useRelay.setState({
     vaultAddress: vault,
     backendState: row.state,
@@ -230,6 +234,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
       ? [...lapNotes, ...prev.notifications.filter((n) => !lapNotes.some((x) => x.id === n.id))].slice(0, 40)
       : prev.notifications,
     now,
+    priceHistory,
   });
 }
 

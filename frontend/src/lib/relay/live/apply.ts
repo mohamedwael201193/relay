@@ -133,13 +133,14 @@ export function assetFromMarket(
 function windowFromMarketRow(r: LiveMarketRow, now: number): MarketWindow {
   const expiryMs = r.expiry ? Number(r.expiry) * 1000 : now + 60_000;
   const asset = assetFromMarket(r.marketId, r, []);
+  const openPrice = Number(r.openPrice);
   return {
     id: r.marketId,
     marketId: r.marketId,
     asset,
     label: `${asset} Up or Down`,
     cadence: cadenceFromInterval(r.intervalSec ?? null),
-    openPrice: 0,
+    openPrice: Number.isFinite(openPrice) && openPrice > 0 ? openPrice : 0,
     opensAt: now,
     closesAt: Number.isFinite(expiryMs) ? expiryMs : now + 60_000,
     venue: "DreamDEX · Event Contracts",
@@ -183,8 +184,12 @@ export function liveLapFromState(opts: {
         : mapped.phase;
   const windowTotal = Math.max(1, market.closesAt - market.opensAt);
   const elapsed = Math.max(0, Math.min(windowTotal, opts.now - market.opensAt));
-  const price = lastOrder?.price ? Number(lastOrder.price) / 1e6 : 0;
+  const fillYes = lastOrder?.price ? Number(lastOrder.price) / 1e6 : 0;
   const qty = lastOrder?.quantity ? Number(lastOrder.quantity) / 1e6 : 0;
+  const liveUnderlying =
+    raw && Number.isFinite(Number(raw.livePrice)) && Number(raw.livePrice) > 0
+      ? Number(raw.livePrice)
+      : 0;
   return {
     number: opts.row.lap_index || 1,
     market,
@@ -200,20 +205,20 @@ export function liveLapFromState(opts: {
             lapNumber: opts.row.lap_index,
             marketId: lastOrder.market_id,
             side,
-            stake: price && qty ? price * qty : 0,
-            entryPrice: price || 0,
+            stake: fillYes && qty ? fillYes * qty : 0,
+            entryPrice: fillYes || 0,
             quantity: qty,
-            markPrice: price || 0,
+            markPrice: fillYes || 0,
           }
         : null,
     order: lastOrder
       ? {
           id: `ord-${lastOrder.lap_index}`,
-          kind: "IOC",
+          kind: "IOC" as const,
           side,
-          price,
+          price: fillYes,
           quantity: qty,
-          stake: price * qty,
+          stake: fillYes * qty,
           placedAt: Date.parse(lastOrder.created_at) || opts.now,
           status: verifiedFill ? "FILLED" : "PLACED",
           tx: { hash: lastOrder.tx_hash, block: 0, at: Date.parse(lastOrder.created_at) || opts.now },
@@ -225,14 +230,14 @@ export function liveLapFromState(opts: {
         ? {
             id: `fil-${lastOrder.lap_index}`,
             orderId: `ord-${lastOrder.lap_index}`,
-            price,
+            price: fillYes,
             quantity: Number(lastOrder.filled) / 1e6,
             filledAt: Date.parse(lastOrder.created_at) || opts.now,
             tx: { hash: lastOrder.tx_hash, block: 0, at: Date.parse(lastOrder.created_at) || opts.now },
           }
         : null,
-    price: 0,
-    probUp: price > 0 ? price : Number.NaN,
+    price: liveUnderlying,
+    probUp: fillYes > 0 ? fillYes : Number.NaN,
     events: [
       {
         id: `ev-${opts.row.state}`,
@@ -296,6 +301,21 @@ export function lapsFromHistory(
           ? Number(h.pnl) / 1e6
           : Number.NaN;
     const marketOutcome: Outcome = settle?.voided ? "VOID" : outcome === "LOSS" ? "DOWN" : "UP";
+    const mkt = markets.find((m) => m.marketId.toLowerCase() === h.market_id.toLowerCase());
+    const histOpen = Number(h.open_price);
+    const histClose = Number(h.close_price);
+    const openPrice =
+      Number.isFinite(histOpen) && histOpen > 0
+        ? histOpen
+        : Number.isFinite(Number(mkt?.openPrice)) && Number(mkt?.openPrice) > 0
+          ? Number(mkt?.openPrice)
+          : 0;
+    const closePrice =
+      Number.isFinite(histClose) && histClose > 0
+        ? histClose
+        : Number.isFinite(Number(mkt?.closePrice)) && Number(mkt?.closePrice) > 0
+          ? Number(mkt?.closePrice)
+          : 0;
     return [{
       number: h.lap_index,
       market: {
@@ -304,8 +324,8 @@ export function lapsFromHistory(
         marketId: h.market_id,
         windowStart: placedAt,
         windowEnd: placedAt,
-        openPrice: 0,
-        closePrice: 0,
+        openPrice,
+        closePrice,
         cadence,
       },
       side,
@@ -343,7 +363,7 @@ export function lapsFromHistory(
         fillTx: order.tx_hash,
         settlementTx: settle?.redeem_tx ?? "",
         claimTx: settle?.redeem_tx ?? "",
-        oracleQuestionId: "",
+        oracleQuestionId: h.oracle_question_id || mkt?.oracleQuestionId || "",
         status: settle?.redeem_tx ? "VERIFIED" : settle ? "PENDING" : "PENDING",
         sealedAt: settle ? Date.parse(settle.created_at) || 0 : 0,
       },

@@ -20,7 +20,7 @@ import {
   shortHash,
   signed,
 } from "@/lib/relay/format";
-import { explorerTxUrl } from "@/lib/relay/config/network";
+import { explorerTxUrl, oracleQuestionUrl } from "@/lib/relay/config/network";
 import { AssetIcon, FlameMark, VerifiedSeal } from "../../identity/identity";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -134,7 +134,24 @@ function LapReceipt({ lap }: { lap: Lap }) {
               value={`${price(m.openPrice, m.asset)} → ${price(m.closePrice, m.asset)}`}
             />
             <MonoRow label="MARKET" value={lap.marketOutcome} tone={outcomeTone} />
-            <MonoRow label="ORACLE Q" value={shortHash(lap.proof.oracleQuestionId)} tone="foam" />
+            <MonoRow
+              label="ORACLE Q"
+              value={
+                oracleQuestionUrl(lap.proof.oracleQuestionId) ? (
+                  <a
+                    href={oracleQuestionUrl(lap.proof.oracleQuestionId)!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline decoration-lined underline-offset-2 hover:text-cream"
+                  >
+                    {lap.proof.oracleQuestionId}
+                  </a>
+                ) : (
+                  "—"
+                )
+              }
+              tone="foam"
+            />
             <MonoRow label="SETTLE TX" value={shortHash(lap.proof.settlementTx)} tone="foam" />
             <MonoRow label={claimLabel} value={shortHash(lap.proof.claimTx)} tone="foam" />
           </div>

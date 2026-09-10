@@ -2,6 +2,7 @@ import {
   SomniaMarkets,
   SOMNIA_MAINNET_ADDRESSES,
   SOMNIA_TESTNET_ADDRESSES,
+  SOMNIA_TESTNET_PRICE_FEED,
 } from "@somnia-chain/markets-sdk";
 import { somniaMainnet, somniaShannon } from "@somnia-chain/markets-sdk/chains";
 import type { Hex } from "viem";
@@ -22,6 +23,7 @@ export function createExchange(network: NetworkName, privateKey?: Hex): SomniaMa
       chain: somniaShannon,
       wsRpcUrl: envString("SOMNIA_SHANNON_WS_URL", DEFAULT_SHANNON_WS),
       addresses: SOMNIA_TESTNET_ADDRESSES,
+      priceFeed: SOMNIA_TESTNET_PRICE_FEED,
       privateKey,
     });
   }
