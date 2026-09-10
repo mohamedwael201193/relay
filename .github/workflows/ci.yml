@@ -26,6 +26,7 @@ jobs:
             exit 1
           fi
       - run: pnpm install --frozen-lockfile
+      - run: node scripts/check-frontend-mocks.mjs
       - run: pnpm test
       - run: pnpm typecheck
 
@@ -49,3 +50,29 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: git clone --depth 1 https://github.com/foundry-rs/forge-std contracts/lib/forge-std
       - run: forge test -vv
+
+  frontend:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_PRIVY_APP_ID: cmtuwy7ib00d30cjpkl8dzpqk
+      NEXT_PUBLIC_RELAY_API_URL: https://relay-api-71gi.onrender.com
+      NEXT_PUBLIC_NETWORK: shannon
+      NEXT_PUBLIC_CHAIN_ID: "50312"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: node scripts/check-frontend-mocks.mjs
+      - name: install frontend
+        working-directory: frontend
+        run: pnpm install
+      - name: build frontend
+        working-directory: frontend
+        run: npx next build
+      - name: scan bundle for secrets
+        run: node scripts/check-frontend-bundle.mjs

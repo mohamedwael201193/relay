@@ -1,0 +1,259 @@
+"use client";
+
+/**
+ * RELAY — ANALYTICS.
+ * How the runner actually runs: attribution, calibration and risk over
+ * the same verified tape. Every chart is a hand-built SVG in
+ * charts/** — no chart libraries — and every number is derived from
+ * the store.
+ */
+
+import { useMemo } from "react";
+import { MotionConfig } from "framer-motion";
+import { selectNextStake, useRelay } from "@/lib/relay/engine/store";
+import { money } from "@/lib/relay/format";
+import { FlameMark } from "../identity/identity";
+import {
+  BankrollChart,
+  ExpectedVsRealized,
+  OutcomeStrip,
+  PnlByAsset,
+  PnlByHour,
+  RiskPanel,
+  StreakProgression,
+  WinRateDonut,
+} from "../charts";
+import type { AssetLane } from "../charts";
+import type { BankrollPoint } from "../charts";
+
+export function AnalyticsScreen() {
+  const laps = useRelay((s) => s.laps);
+  const bankroll = useRelay((s) => s.bankroll);
+  const startBankroll = useRelay((s) => s.startBankroll);
+  const streak = useRelay((s) => s.streak);
+  const config = useRelay((s) => s.config);
+  const liveLap = useRelay((s) => s.liveLap);
+
+  /* ── derivations from the tape ── */
+
+  const asc = useMemo(() => [...laps].sort((a, b) => a.number - b.number), [laps]);
+
+  const counts = useMemo(() => {
+    const wins = asc.filter((l) => l.outcome === "WIN").length;
+    const losses = asc.filter((l) => l.outcome === "LOSS").length;
+    const voids = asc.filter((l) => l.outcome === "VOID").length;
+    return { wins, losses, voids, decided: wins + losses };
+  }, [asc]);
+
+  const bankrollPoints = useMemo<BankrollPoint[]>(() => {
+    const pts: BankrollPoint[] = [
+      { lap: 0, bankroll: startBankroll, pnl: 0, outcome: null },
+    ];
+    let b = startBankroll;
+    for (const l of asc) {
+      b = +(b + l.pnl).toFixed(2);
+      pts.push({
+        lap: l.number,
+        bankroll: b,
+        pnl: l.pnl,
+        outcome: l.outcome,
+        shielded: l.shielded,
+      });
+    }
+    return pts;
+  }, [asc, startBankroll]);
+
+  const nowPoint = liveLap ? { lap: liveLap.number, bankroll } : null;
+
+  const assetLanes = useMemo<AssetLane[]>(() => {
+    return (["BTC", "ETH"] as const)
+      .map((asset) => {
+        const ls = asc.filter((l) => l.market.asset === asset);
+        const wins = ls.filter((l) => l.outcome === "WIN").length;
+        const losses = ls.filter((l) => l.outcome === "LOSS").length;
+        const pnl = +ls.reduce((s, l) => s + l.pnl, 0).toFixed(2);
+        const decided = wins + losses;
+        return {
+          asset,
+          pnl,
+          laps: ls.length,
+          wins,
+          losses,
+          winRate: decided > 0 ? wins / decided : 0,
+        };
+      })
+      .filter((lane) => lane.laps > 0);
+  }, [asc]);
+
+  const streakSteps = useMemo(
+    () =>
+      asc.map((l) => ({
+        lap: l.number,
+        streak: l.streakAfter,
+        outcome: l.outcome,
+        shielded: l.shielded,
+      })),
+    [asc]
+  );
+
+  const risk = useMemo(() => {
+    let peak = startBankroll;
+    let maxDD = 0;
+    for (const p of bankrollPoints) {
+      peak = Math.max(peak, p.bankroll);
+      maxDD = Math.max(maxDD, peak - p.bankroll);
+    }
+    peak = +peak.toFixed(2);
+    const pnls = asc.map((l) => l.pnl);
+    const mean = pnls.reduce((s, p) => s + p, 0) / Math.max(1, pnls.length);
+    const variance =
+      pnls.length > 1
+        ? pnls.reduce((s, p) => s + (p - mean) ** 2, 0) / (pnls.length - 1)
+        : 0;
+    const sd = Math.sqrt(variance);
+    return {
+      peak,
+      maxDrawdown: +maxDD.toFixed(2),
+      maxDrawdownPct: peak > 0 ? maxDD / peak : 0,
+      drawdownNow: +Math.max(0, peak - bankroll).toFixed(2),
+      sharpe: sd > 0 ? +(mean / sd).toFixed(4) : 0,
+      nextStake: +selectNextStake(bankroll, streak.current, config).toFixed(2),
+    };
+  }, [asc, bankrollPoints, startBankroll, bankroll, streak.current, config]);
+
+  const calib = useMemo(() => {
+    if (asc.length === 0) return { expected: 0, realized: 0 };
+    const meanStake = asc.reduce((s, l) => s + l.stake, 0) / asc.length;
+    const meanPnl = asc.reduce((s, l) => s + l.pnl, 0) / asc.length;
+    return { expected: +(meanStake * 0.021).toFixed(2), realized: +meanPnl.toFixed(2) };
+  }, [asc]);
+
+  const hourBuckets = useMemo(() => {
+    if (asc.length === 0) return [];
+    const start = asc[0]?.settledAt ?? 0;
+    const buckets = [0, 1, 2, 3, 4, 5].map((b) => {
+      const inb = asc.filter((l) => Math.floor((l.settledAt - start) / (4 * 3_600_000)) === b);
+      const wins = inb.filter((l) => l.outcome === "WIN").length;
+      return {
+        bucket: b,
+        label: `${String(9 + b).padStart(2, "0")}:00`,
+        laps: inb.length,
+        wins,
+        pnl: +inb.reduce((s, l) => s + l.pnl, 0).toFixed(2),
+        winRate: inb.length ? wins / inb.length : 0,
+      };
+    });
+    return buckets.filter((b) => b.laps > 0);
+  }, [asc]);
+  const bestStreak = streakSteps.reduce((m, s) => Math.max(m, s.streak), 0);
+  const lastLap = asc[asc.length - 1]?.number ?? 0;
+  const netTape = +asc.reduce((s, l) => s + l.pnl, 0).toFixed(2);
+  const decided = counts.decided;
+
+  return (
+    <MotionConfig reducedMotion="user">
+      <div className="mx-auto w-full max-w-6xl px-4 pb-12 pt-6 sm:px-6 lg:px-8">
+        {/* ── header ── */}
+        <header>
+          <div className="flex items-center gap-2">
+            <FlameMark className="h-4 w-4" aria-hidden />
+            <span className="mlabel text-flame">ANALYTICS</span>
+          </div>
+          <h1 className="mt-2 text-3xl font-black wide leading-[0.95] tracking-[-0.01em] sm:text-4xl">
+            How the runner actually runs.
+          </h1>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-foam">
+            Attribution, calibration and risk — derived from the same verified
+            tape. No vanity metrics.
+          </p>
+        </header>
+
+        {/* ── the grid ── */}
+        <div className="mt-6 grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          <BankrollChart
+            className="sm:col-span-2"
+            points={bankrollPoints}
+            nowPoint={nowPoint}
+            ariaSummary={`Bankroll went from ${money(startBankroll)} to ${money(
+              bankroll
+            )} over ${asc.length} laps — ${counts.wins} wins, ${counts.losses} losses, ${
+              counts.voids
+            } void.`}
+          />
+
+          <OutcomeStrip
+            ticks={asc.map((l) => ({
+              lap: l.number,
+              outcome: l.outcome,
+              shielded: l.shielded,
+              pnl: l.pnl,
+              streakAfter: l.streakAfter,
+            }))}
+            ariaSummary={`Lap tape: ${counts.wins} wins, ${counts.losses} losses and ${
+              counts.voids
+            } void across ${asc.length} laps, best streak ×${bestStreak}.`}
+          />
+
+          <WinRateDonut
+            wins={counts.wins}
+            losses={counts.losses}
+            voids={counts.voids}
+            ariaSummary={
+              decided > 0
+                ? `Win rate ${Math.round((counts.wins / decided) * 1000) / 10}% over ${decided} decided laps — ${counts.wins} wins, ${counts.losses} losses, ${counts.voids} void.`
+                : "No decided laps yet."
+            }
+          />
+
+          <PnlByAsset
+            lanes={assetLanes}
+            ariaSummary={assetLanes
+              .map((l) => `${l.asset} net ${l.pnl >= 0 ? "+" : "−"}$${Math.abs(l.pnl).toFixed(2)} over ${l.laps} laps`)
+              .join("; ")}
+          />
+
+          <PnlByHour
+            buckets={hourBuckets}
+            ariaSummary={
+              hourBuckets.length
+                ? `Net PnL by 4-hour bucket, from ${money(
+                    hourBuckets.reduce((m, b) => Math.min(m, b.pnl), Infinity)
+                  )} to ${money(hourBuckets.reduce((m, b) => Math.max(m, b.pnl), -Infinity))}.`
+                : "No session data yet."
+            }
+          />
+
+          <StreakProgression
+            steps={streakSteps}
+            best={bestStreak}
+            ariaSummary={`Streak after each of ${asc.length} laps, best streak ×${bestStreak}.`}
+          />
+
+          <ExpectedVsRealized
+            expected={calib.expected}
+            realized={calib.realized}
+            laps={asc.length}
+            ariaSummary={`Expected ${money(calib.expected)} per lap versus realized ${money(
+              calib.realized
+            )} per lap over ${asc.length} laps.`}
+          />
+
+          <RiskPanel
+            laps={asc.length}
+            maxDrawdown={risk.maxDrawdown}
+            maxDrawdownPct={risk.maxDrawdownPct}
+            peak={risk.peak}
+            drawdownNow={risk.drawdownNow}
+            sharpe={risk.sharpe}
+            nextStake={risk.nextStake}
+            nextLap={liveLap ? liveLap.number : lastLap > 0 ? lastLap + 1 : null}
+            streak={streak.current}
+            ariaSummary={`Max drawdown ${money(-risk.maxDrawdown)}, ${
+              Math.round(risk.maxDrawdownPct * 1000) / 10
+            }% of the ${money(risk.peak)} peak. Tape net ${money(netTape, { sign: true })}.`}
+          />
+        </div>
+      </div>
+    </MotionConfig>
+  );
+}

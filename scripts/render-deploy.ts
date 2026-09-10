@@ -108,7 +108,9 @@ async function main() {
     { key: "MAINNET_TRADING_ENABLED", value: "false" },
     { key: "RELAY_RUN_WORKER", value: "true" },
     { key: "NODE_VERSION", value: "20" },
-  ];
+    { key: "CORS_ORIGINS", value: process.env.CORS_ORIGINS?.trim() || "http://localhost:3000,http://127.0.0.1:3000" },
+    { key: "PRIVY_APP_ID", value: process.env.PRIVY_APP_ID?.trim() || process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim() || "" },
+  ].filter((row) => row.value);
 
   async function ensure(
     ownerId: string,

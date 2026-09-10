@@ -37,7 +37,9 @@
     "render:deploy": "tsx scripts/render-deploy.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:frontend-mocks": "node scripts/check-frontend-mocks.mjs",
+    "isolation:owners": "tsx scripts/owner-isolation.ts"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

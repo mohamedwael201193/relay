@@ -92,6 +92,7 @@ export async function runLiveOrder(
     skipMarketIds?: string[];
     waitMs?: number;
     maxExpiryHorizonSec?: number;
+    vault?: Address;
   } = {},
 ): Promise<{
   postOnly: AttemptResult | null;
@@ -101,6 +102,7 @@ export async function runLiveOrder(
 }> {
   assertShannonExecution();
   const dep = loadShannonDeployment();
+  const vault = opts.vault ?? dep.vault;
   const client = shannonHttpClient();
   const correlationRoot = randomUUID();
   let chosen = await discoverLiveMarket({
@@ -125,7 +127,7 @@ export async function runLiveOrder(
 
   const qty = snapQuantity(chosen.book.minQuantity, chosen.book.lotSize, chosen.book.minQuantity);
   const tick = chosen.book.tickSize;
-  const vaultBal = await erc20Balance(client, COLLATERAL, dep.vault);
+  const vaultBal = await erc20Balance(client, COLLATERAL, vault);
   const unit = 10n ** BigInt(chosen.decimals);
 
   let postPrice = 0n;
@@ -158,14 +160,14 @@ export async function runLiveOrder(
       functionName: "arm",
       args: [chosen!.marketId, ORDER_KIND.BUY_YES, opts.price, qty, chosen!.expireNs, opts.orderType],
     });
-    const armRcpt = await sendHttp(account, armData, { to: dep.vault, gas: 10_000_000n });
+    const armRcpt = await sendHttp(account, armData, { to: vault, gas: 10_000_000n });
     if (armRcpt.status !== "success") {
       throw new Error(`${opts.label} arm failed hash=${armRcpt.transactionHash}`);
     }
     const placeRcpt = await sendHttp(
       account,
       encodeFunctionData({ abi: vaultWriteAbi, functionName: "placeArmed" }),
-      { to: dep.vault, gas: PLACE_GAS },
+      { to: vault, gas: PLACE_GAS },
     );
     const decoded = decodeFills(placeRcpt.logs);
     const reason = vaultRejectReason(placeRcpt.logs);
@@ -212,7 +214,7 @@ export async function runLiveOrder(
       const cancelRcpt = await sendHttp(
         account,
         encodeFunctionData({ abi: vaultWriteAbi, functionName: "cancelLast" }),
-        { to: dep.vault, gas: 10_000_000n },
+        { to: vault, gas: 10_000_000n },
       );
       if (cancelRcpt.status !== "success") {
         writeEvidence(opts.evidenceName ?? "shannon-order.json", { postOnly, ioc: null, cancelFailed: cancelRcpt.transactionHash });
@@ -228,7 +230,7 @@ export async function runLiveOrder(
 
   writeEvidence(opts.evidenceName ?? "shannon-order.json", {
     chainId: 50312,
-    vault: dep.vault,
+    vault,
     correlationRoot,
     asset: chosen.asset,
     intervalSec: chosen.intervalSec,

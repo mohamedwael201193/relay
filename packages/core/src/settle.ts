@@ -28,8 +28,13 @@ const token6909Abi = parseAbi([
 
 const marketAbi = parseAbi(["function outcomeToken() view returns (address)"]);
 
-export async function settleFilledMarket(account: LocalAccount, marketId: Hex) {
+export async function settleFilledMarket(
+  account: LocalAccount,
+  marketId: Hex,
+  opts: { vault?: Address } = {},
+) {
   const dep = loadShannonDeployment();
+  const vault = opts.vault ?? dep.vault;
   const client = shannonHttpClient();
   const before = await getMarketOnchainHttp(client, MODULE, marketId);
   const { encodeFunctionData } = await import("viem");
@@ -76,25 +81,25 @@ export async function settleFilledMarket(account: LocalAccount, marketId: Hex) {
     address: outcomeToken,
     abi: token6909Abi,
     functionName: "balanceOf",
-    args: [dep.vault, afterPoke.yesId],
+    args: [vault, afterPoke.yesId],
   });
   const noBal = await client.readContract({
     address: outcomeToken,
     abi: token6909Abi,
     functionName: "balanceOf",
-    args: [dep.vault, afterPoke.noId],
+    args: [vault, afterPoke.noId],
   });
 
   let redeemTx: Hex | null = null;
   let syncVaultTx: Hex | null = null;
   let redeemed = false;
-  const vaultColBefore = await erc20Balance(client, COLLATERAL, dep.vault);
+  const vaultColBefore = await erc20Balance(client, COLLATERAL, vault);
 
   if (afterPoke.isResolved || afterPoke.isVoided) {
     const sv = await sendHttp(
       account,
       encodeFunctionData({ abi: vaultAbi, functionName: "syncResolution", args: [marketId] }),
-      { to: dep.vault, gas: 10_000_000n },
+      { to: vault, gas: 10_000_000n },
     );
     syncVaultTx = sv.transactionHash;
     const appr = await sendHttp(
@@ -104,7 +109,7 @@ export async function settleFilledMarket(account: LocalAccount, marketId: Hex) {
         functionName: "approveOutcomeOperator",
         args: [outcomeToken, true],
       }),
-      { to: dep.vault, gas: 5_000_000n },
+      { to: vault, gas: 5_000_000n },
     );
     txs.push({ name: "approveOutcomeOperator", hash: appr.transactionHash, status: appr.status });
 
@@ -126,7 +131,7 @@ export async function settleFilledMarket(account: LocalAccount, marketId: Hex) {
           functionName: "redeemPosition",
           args: [marketId, idx, amt],
         }),
-        { to: dep.vault, gas: 15_000_000n },
+        { to: vault, gas: 15_000_000n },
       );
       redeemTx = rcpt.transactionHash;
       redeemed = rcpt.status === "success";
@@ -146,11 +151,11 @@ export async function settleFilledMarket(account: LocalAccount, marketId: Hex) {
       : amount === 0n || redeemed;
     if (amount === 0n && !afterPoke.isVoided) redeemed = false;
 
-    const vaultColAfter = await erc20Balance(client, COLLATERAL, dep.vault);
+    const vaultColAfter = await erc20Balance(client, COLLATERAL, vault);
     const evidence = {
       chainId: 50312,
       marketId,
-      vault: dep.vault,
+      vault: vault,
       statusBefore: before.statusLabel,
       statusAfter: afterPoke.statusLabel,
       resolved: afterPoke.isResolved,
@@ -173,11 +178,11 @@ export async function settleFilledMarket(account: LocalAccount, marketId: Hex) {
     return evidence;
   }
 
-  const vaultColAfter = await erc20Balance(client, COLLATERAL, dep.vault);
+  const vaultColAfter = await erc20Balance(client, COLLATERAL, vault);
   const evidence = {
     chainId: 50312,
     marketId,
-    vault: dep.vault,
+    vault: vault,
     statusBefore: before.statusLabel,
     statusAfter: afterPoke.statusLabel,
     resolved: afterPoke.isResolved,

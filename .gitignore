@@ -19,6 +19,11 @@ RELAY-*.md
 04-*.md
 docs/**/*.md
 docs/evidence/
+frontend/**/*.md
+frontend/tool-results/
+frontend/db/
+frontend/.zscripts/
+*.pid
 
 # Research clones and package tarballs (local verification only)
 .research/

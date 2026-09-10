@@ -1,6 +1,5 @@
 import {
   assertShannonExecution,
-  loadShannonDeployment,
   readVaultSnapshot,
   runDoctor,
   runLiveOrder,
@@ -18,7 +17,7 @@ import {
   setRunnerState,
 } from "@relay/db";
 import type { LocalAccount } from "viem/accounts";
-import type { Hex } from "viem";
+import type { Address, Hex } from "viem";
 
 function log(event: string, extra: Record<string, unknown>): void {
   console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...extra }));
@@ -26,32 +25,31 @@ function log(event: string, extra: Record<string, unknown>): void {
 
 export async function reconcileOnce(account: LocalAccount): Promise<{ action: string; runnerId?: string }> {
   assertShannonExecution();
-  const dep = loadShannonDeployment();
   const doctor = await runDoctor({ skipTooling: true });
   if (protocolChecksFailed(doctor.checks) || doctor.failClosed && doctor.checks.some((c) => c.id.startsWith("shannon.") && c.status === "FAIL")) {
     log("doctor_block", { failClosed: doctor.failClosed });
     return { action: "doctor_block" };
   }
 
-  const snap = await readVaultSnapshot(dep.vault);
+  const claimed = await claimRunner();
+  if (!claimed) {
+    log("no_lease", {});
+    return { action: "no_lease" };
+  }
+  const vault = claimed.vault as Address;
+  const snap = await readVaultSnapshot(vault);
   await ensureRunner({
-    vault: dep.vault,
+    vault,
     owner: snap.owner,
     operator: snap.operator,
   });
-  const runner = await claimRunner(dep.vault);
-  if (!runner) {
-    log("no_lease", { vault: dep.vault });
-    return { action: "no_lease" };
-  }
-
-  const claimed = runner;
+  const runner = claimed;
   let state = claimed.state as RunnerState;
   async function go(to: RunnerState, extra?: Parameters<typeof setRunnerState>[2]): Promise<void> {
     const hops = shortestPath(state, to);
     for (let i = 0; i < hops.length; i++) {
       const hop = hops[i];
-      await setRunnerState(claimed.id, hop, i === hops.length - 1 ? extra : {});
+      await setRunnerState(runner.id, hop, i === hops.length - 1 ? extra : {});
       state = hop;
     }
   }
@@ -59,8 +57,12 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
   try {
     if (snap.killed) {
       await go("KILLED", { lastError: "vault killed on-chain" });
-      log("killed", { vault: dep.vault, runnerId: runner.id });
+      log("killed", { vault, runnerId: runner.id });
       return { action: "killed", runnerId: runner.id };
+    }
+    if (snap.operator.toLowerCase() !== account.address.toLowerCase()) {
+      log("operator_mismatch", { vault, operator: snap.operator, runnerId: runner.id });
+      return { action: "operator_mismatch", runnerId: runner.id };
     }
 
     const proof = await listProof(runner.id);
@@ -76,7 +78,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
 
     if (needsSettle && lastOrder) {
       await go("WAITING_SETTLEMENT", { lastMarketId: lastOrder.market_id });
-      const settlement = await settleFilledMarket(account, lastOrder.market_id as Hex);
+      const settlement = await settleFilledMarket(account, lastOrder.market_id as Hex, { vault });
       const nextState: RunnerState = settlement.voided
         ? "SETTLED_VOID"
         : settlement.outcome === "loss"
@@ -88,7 +90,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
               : "WAITING_SETTLEMENT";
       await persistWorkerStep({
         runnerId: runner.id,
-        vault: dep.vault,
+        vault,
         lapIndex: lastOrder.lap_index,
         marketId: lastOrder.market_id,
         correlationId: `settle:${lastOrder.tx_hash}`,
@@ -120,6 +122,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       skipMarketIds: skip,
       waitMs: 90_000,
       evidenceName: "shannon-worker-order.json",
+      vault,
     });
     const attempt = placed.ioc ?? placed.postOnly;
     if (!attempt) {
@@ -130,7 +133,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     const nextIndex = (lastOrder?.lap_index ?? 0) + 1;
     await persistWorkerStep({
       runnerId: runner.id,
-      vault: dep.vault,
+      vault,
       lapIndex: nextIndex,
       marketId: attempt.marketId,
       pool: attempt.pool,

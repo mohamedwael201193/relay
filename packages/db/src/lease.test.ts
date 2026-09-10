@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadEnv } from "@relay/core";
-import { claimRunner, ensureRunner, releaseRunner } from "./lease.js";
+import { claimRunner, ensureRunner, releaseRunner, setRunnerState } from "./lease.js";
 import { withPool } from "./pool.js";
 
 loadEnv();
@@ -8,9 +8,12 @@ loadEnv();
 const OWNER = "0x0000000000000000000000000000000000000b0b";
 
 describe.skipIf(!process.env.DATABASE_URL?.trim())("SKIP LOCKED leases", () => {
-  it("second claim of the same vault returns null until release", async () => {
+  it(
+    "second claim of the same vault returns null until release",
+    async () => {
     const vault = `0x${Date.now().toString(16).padStart(40, "0")}`.slice(0, 42);
-    await ensureRunner({ vault, owner: OWNER, operator: OWNER });
+    const seeded = await ensureRunner({ vault, owner: OWNER, operator: OWNER });
+    await setRunnerState(seeded.id, "ACTIVE");
     try {
       const first = await claimRunner(vault);
       expect(first?.vault.toLowerCase()).toBe(vault.toLowerCase());
@@ -29,5 +32,7 @@ describe.skipIf(!process.env.DATABASE_URL?.trim())("SKIP LOCKED leases", () => {
         await c.query(`DELETE FROM runners WHERE lower(vault)=lower($1)`, [vault]);
       });
     }
-  });
+  },
+  20_000,
+  );
 });

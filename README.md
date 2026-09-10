@@ -73,6 +73,8 @@ pnpm start             # API + worker (Render web process)
 pnpm render:deploy     # create Free web service via Render API (worker optional)
 pnpm test
 pnpm typecheck
+pnpm check:frontend-mocks
+pnpm isolation:owners   # local API: Wallet B cannot start/stop/pause Wallet A's vault
 forge test
 ```
 
@@ -85,13 +87,18 @@ Environment variable **names** (values stay in gitignored files):
 ## Layout
 
 ```
-apps/api         HTTP health, network, runner proof/history, SSE heartbeat
-apps/worker      Single-writer agent (discover → fill → settle → re-arm)
+apps/api         HTTP health, network, owner-scoped runners, proof/history, SSE heartbeat
+apps/worker      Multi-vault agent (discover → fill → settle → re-arm)
 packages/core    SDK pin, doctor, deploy, execution, settlement
 packages/db      Postgres migrations + SKIP LOCKED leases
 contracts/       Foundry (RunnerVault, RelayRegistry, ReactivityManager)
+frontend/        Existing designed Next.js app (Privy + live API; no production mocks)
 scripts/         operator scripts
 ```
+
+Public frontend env names: `NEXT_PUBLIC_RELAY_API_URL`, `NEXT_PUBLIC_PRIVY_APP_ID`, `NEXT_PUBLIC_NETWORK`, `NEXT_PUBLIC_CHAIN_ID`. Never put operator/deployer keys or database URLs in `NEXT_PUBLIC_*`.
+
+`pnpm api` serves CORS for local Next (`http://localhost:3000`) plus `CORS_ORIGINS`. Start/stop/pause require an owner-signed message; kill/withdraw are on-chain `onlyOwner` calls from the wallet. The worker trades only vaults whose on-chain operator is the worker key.
 
 ## Safety
 

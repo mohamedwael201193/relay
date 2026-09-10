@@ -32,6 +32,23 @@ export async function ensureRunner(input: {
   });
 }
 
+const CLAIMABLE_STATES = [
+  "ACTIVE",
+  "DISCOVERING",
+  "PREPARING",
+  "ORDER_SUBMITTED",
+  "PARTIAL_FILL",
+  "FILLED",
+  "WAITING_SETTLEMENT",
+  "SETTLED_WIN",
+  "SETTLED_LOSS",
+  "SETTLED_VOID",
+  "REDEEMING",
+  "REDEEMED",
+  "REARMING",
+  "ERROR",
+] as const;
+
 export async function claimRunner(vault?: string): Promise<RunnerRow | null> {
   return withPool(async (c) => {
     const row = await c.query<RunnerRow>(
@@ -39,7 +56,7 @@ export async function claimRunner(vault?: string): Promise<RunnerRow | null> {
        SET lease_until = now() + interval '120 seconds', updated_at = now()
        WHERE id = (
          SELECT id FROM runners
-         WHERE state NOT IN ('KILLED')
+         WHERE state = ANY($2::text[])
            AND (lease_until IS NULL OR lease_until < now())
            AND ($1::text IS NULL OR lower(vault) = lower($1))
          ORDER BY updated_at ASC
@@ -47,7 +64,7 @@ export async function claimRunner(vault?: string): Promise<RunnerRow | null> {
          LIMIT 1
        )
        RETURNING id, vault, owner, operator, state, chain_id, last_error, last_market_id, lap_index`,
-      [vault ?? null],
+      [vault ?? null, [...CLAIMABLE_STATES]],
     );
     return row.rows[0] ?? null;
   });
@@ -78,6 +95,18 @@ export async function setRunnerState(
   });
 }
 
+export async function listRunnersByOwner(owner: string): Promise<RunnerRow[]> {
+  return withPool(async (c) => {
+    const r = await c.query<RunnerRow>(
+      `SELECT id, vault, owner, operator, state, chain_id, last_error, last_market_id, lap_index
+       FROM runners WHERE lower(owner) = lower($1)
+       ORDER BY updated_at DESC`,
+      [owner],
+    );
+    return r.rows;
+  });
+}
+
 export async function getRunnerByVault(vault: string): Promise<RunnerRow | null> {
   return withPool(async (c) => {
     const r = await c.query<RunnerRow>(
@@ -103,7 +132,7 @@ export async function listLaps(runnerId: string) {
 export async function listProof(runnerId: string) {
   return withPool(async (c) => {
     const orders = await c.query(
-      `SELECT o.attempt_id, o.tx_hash, o.fill_class, o.filled, o.receipt_status, o.created_at, l.market_id, l.lap_index
+      `SELECT o.attempt_id, o.tx_hash, o.fill_class, o.filled, o.receipt_status, o.price, o.quantity, o.created_at, l.market_id, l.lap_index
        FROM orders o JOIN laps l ON l.id = o.lap_id
        WHERE l.runner_id = $1 ORDER BY o.created_at ASC`,
       [runnerId],

@@ -90,6 +90,24 @@ contract RunnerVaultTest is Test {
         vault.withdraw(1);
     }
 
+    function test_stranger_cannot_kill() public {
+        vm.prank(stranger);
+        vm.expectRevert(RunnerVault.NotOwner.selector);
+        vault.kill();
+    }
+
+    function test_operator_cannot_kill() public {
+        vm.prank(operator);
+        vm.expectRevert(RunnerVault.NotOwner.selector);
+        vault.kill();
+    }
+
+    function test_stranger_cannot_set_caps() public {
+        vm.prank(stranger);
+        vm.expectRevert(RunnerVault.NotOwner.selector);
+        vault.setCaps(1, 1, 1, 1);
+    }
+
     function test_kill_blocks_operator_place_but_owner_withdraws() public {
         vault.kill();
         vm.prank(operator);

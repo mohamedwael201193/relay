@@ -4,7 +4,7 @@ import { erc20Abi, parseAbi, type Address, type Hex } from "viem";
 import { privateKeyToAccount, type LocalAccount } from "viem/accounts";
 import { SHANNON_ADDRESSES, requiredAddress } from "./addresses.js";
 import { encodeCreate } from "./sendRealtime.js";
-import { sendHttp, shannonHttpClient, somniaCreateGas } from "./sendHttp.js";
+import { assertDeployBudget, sendHttp, shannonHttpClient, somniaCreateGas } from "./sendHttp.js";
 import { erc20Balance } from "./rpc.js";
 
 const MODULE = requiredAddress(SHANNON_ADDRESSES.binaryModule, "binaryModule");
@@ -37,6 +37,44 @@ const vaultAbi = parseAbi([
 export function loadShannonDeployment(): ShannonDeployment {
   const p = resolve(process.cwd(), "packages/core/src/deployments/shannon.json");
   return JSON.parse(readFileSync(p, "utf8")) as ShannonDeployment;
+}
+
+type VaultCreateArtifact = { abi: unknown[]; bytecode: Hex; deployedBytecode: Hex };
+
+function loadVaultCreate(): VaultCreateArtifact {
+  const p = resolve(process.cwd(), "packages/core/src/deployments/RunnerVault.create.json");
+  return JSON.parse(readFileSync(p, "utf8")) as VaultCreateArtifact;
+}
+
+export async function deployOwnedVault(
+  account: LocalAccount,
+  owner: Address,
+  caps: {
+    budget: bigint;
+    perWindowCap: bigint;
+    maxDailyLoss: bigint;
+    maxOutstanding: bigint;
+  },
+): Promise<{ vault: Address; tx: Hex; gasUsed: string }> {
+  const art = loadVaultCreate();
+  const data = encodeCreate(art.abi as never, art.bytecode, [
+    owner,
+    COLLATERAL,
+    MODULE,
+    ORACLE,
+    6,
+    caps.budget,
+    caps.perWindowCap,
+    caps.maxDailyLoss,
+    caps.maxOutstanding,
+  ]);
+  const gas = somniaCreateGas(art.deployedBytecode);
+  await assertDeployBudget(account, gas);
+  const rcpt = await sendHttp(account, data, { gas });
+  if (rcpt.status !== "success" || !rcpt.contractAddress) {
+    throw new Error(`owned vault deploy failed hash=${rcpt.transactionHash} status=${rcpt.status}`);
+  }
+  return { vault: rcpt.contractAddress, tx: rcpt.transactionHash, gasUsed: rcpt.gasUsed.toString() };
 }
 
 export async function readVaultSnapshot(vault: Address) {

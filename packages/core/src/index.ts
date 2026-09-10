@@ -10,6 +10,7 @@ export { deployShannon } from "./deploy.js";
 export { somniaCreateGas, SOMNIA_CODE_GAS_PER_BYTE } from "./sendHttp.js";
 export {
   loadShannonDeployment,
+  deployOwnedVault,
   readVaultSnapshot,
   fundVault,
   withdrawVault,

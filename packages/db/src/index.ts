@@ -4,6 +4,7 @@ export {
   claimRunner,
   ensureRunner,
   getRunnerByVault,
+  listRunnersByOwner,
   listLaps,
   listProof,
   persistWorkerStep,
