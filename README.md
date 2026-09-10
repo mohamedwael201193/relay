@@ -75,6 +75,7 @@ pnpm test
 pnpm typecheck
 pnpm check:frontend-mocks
 pnpm isolation:owners   # local API: Wallet B cannot start/stop/pause Wallet A's vault
+pnpm owner:lifecycle    # provision/deposit/kill/withdraw a second-owner vault; does not touch ops
 forge test
 ```
 
