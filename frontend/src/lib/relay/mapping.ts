@@ -3,7 +3,7 @@
  *
  * mockRunner              → GET /v1/runners/:vault + GET /v1/runners?owner=
  * mockRunner.status       → backend runner.state (see mapBackendState)
- * mockRunner.streak       → consecutive SETTLED_WIN laps from backend history; voids keep the run
+ * mockRunner.streak       → consecutive SETTLED_WIN/REDEEMED laps from backend history; voids keep the run
  * mockRunner.pnl          → sum of verified lap pnl from history; 0 if unknown
  * mockMarket              → GET /v1/markets/live (DreamDEX harness)
  * mockFill                → proof.orders where fill_class is FILL | PARTIAL_FILL (OrderFilled)

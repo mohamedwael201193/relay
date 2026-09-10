@@ -211,6 +211,7 @@ export type ProofBundle = {
     resolved: boolean;
     voided: boolean;
     redeem_tx: string | null;
+    payout_numerators?: string[] | number[] | null;
     lap_index: number;
     created_at: string;
   }>;

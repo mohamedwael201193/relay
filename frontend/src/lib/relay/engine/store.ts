@@ -172,8 +172,7 @@ export function selectPnl(s: { bankroll: number; startBankroll: number; laps: La
 
 export function selectLivePnl(live: LiveLap | null): number {
   if (!live?.position) return 0;
-  const mark = live.position.side === "UP" ? live.probUp : 1 - live.probUp;
-  return live.position.quantity * mark - live.position.stake;
+  return live.position.quantity * live.position.markPrice - live.position.stake;
 }
 
 export function selectNextStake(bankroll: number, streak: number, cfg: RunnerConfig): number {

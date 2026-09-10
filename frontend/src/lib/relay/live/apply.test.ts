@@ -150,6 +150,95 @@ describe("lapsFromHistory", () => {
     expect(laps[0].market.closePrice).toBe(77210.4);
     expect(laps[0].proof.oracleQuestionId).toBe("17539064");
   });
+
+  it("maps REDEEMED to WIN with source-backed PnL instead of treating the lap as OPEN", () => {
+    const redeemed: HistoryLap[] = [
+      {
+        ...history[0],
+        state: "REDEEMED",
+        entry_cost: "1499506",
+        redeem_value: "1646000",
+        pnl: "146494",
+        open_price: "2466.66",
+        close_price: "2472.3",
+        oracle_question_id: "53247",
+      },
+    ];
+    const withSettle: ProofBundle = {
+      ...proof,
+      orders: [{ ...proof.orders[0], kind: "BUY_YES", filled: "1646000", quantity: "1646000", price: "911000" }],
+      settlements: [
+        {
+          market_id: "0xeth",
+          resolved: true,
+          voided: false,
+          payout_numerators: ["10000000", "0"],
+          redeem_tx: "0x34a88d1b28f43055bd34c66f9d3e1f66f0b6c23ab0e94977a2b15acd79ceb57b",
+          created_at: "2026-09-10T17:20:12.000Z",
+          lap_index: 1,
+        },
+      ],
+    };
+    const laps = lapsFromHistory(redeemed, withSettle, []);
+    expect(laps[0].outcome).toBe("WIN");
+    expect(laps[0].marketOutcome).toBe("UP");
+    expect(laps[0].pnl).toBeCloseTo(0.146494);
+    expect(laps[0].stake).toBeCloseTo(1.499506);
+    expect(laps[0].streakAfter).toBe(1);
+    expect(laps[0].proof.status).toBe("VERIFIED");
+    expect(laps[0].proof.settlementTx).toMatch(/^0x34a88d/);
+  });
+
+  it("prices BUY_NO escrow in NO terms, not YES * qty", () => {
+    const openNo: HistoryLap[] = [
+      {
+        id: "2",
+        lap_index: 2,
+        market_id: "0xbtc",
+        pool: null,
+        state: "WAITING_SETTLEMENT",
+        correlation_id: null,
+        created_at: "2026-09-10T17:20:26.000Z",
+        asset: "BTC",
+        interval_sec: "900",
+        entry_cost: "1508290",
+      },
+    ];
+    const withFill: ProofBundle = {
+      orders: [
+        {
+          tx_hash: "0xfill2",
+          fill_class: "FILL",
+          filled: "2030000",
+          market_id: "0xbtc",
+          lap_index: 2,
+          created_at: "2026-09-10T17:20:26.000Z",
+          price: "257000",
+          quantity: "2030000",
+          kind: "BUY_NO",
+        },
+      ],
+      settlements: [],
+      records: [],
+    };
+    const laps = lapsFromHistory(openNo, withFill, []);
+    expect(laps[0].side).toBe("DOWN");
+    expect(laps[0].outcome).toBe("OPEN");
+    expect(laps[0].entryPrice).toBeCloseTo(0.743);
+    expect(laps[0].stake).toBeCloseTo(1.50829);
+    expect(laps[0].pnl).toBe(0);
+  });
+});
+
+describe("streakFromHistory redeemed wins", () => {
+  it("counts REDEEMED as a win and does not reset on the next open lap", () => {
+    expect(
+      streakFromHistory([
+        { id: "1", lap_index: 1, market_id: "0x1", pool: null, state: "REDEEMED", correlation_id: null, created_at: "" },
+        { id: "2", lap_index: 2, market_id: "0x2", pool: null, state: "WAITING_SETTLEMENT", correlation_id: null, created_at: "" },
+      ]),
+    ).toEqual({ current: 1, best: 1 });
+  });
 });
 
 describe("sideFromKind", () => {
@@ -286,6 +375,69 @@ describe("live feed fallback", () => {
     expect(lap?.market.asset).toBe("ETH");
     expect(lap?.market.openPrice).toBe(2438.89);
     expect(lap?.price).toBe(2439.615);
+  });
+
+  it("sizes a BUY_NO hold from complementary escrow, not YES * qty", () => {
+    const lap = liveLapFromState({
+      row: {
+        id: "r",
+        vault: "0xabc",
+        owner: "0x1",
+        operator: "0x1",
+        state: "WAITING_SETTLEMENT",
+        chain_id: 50312,
+        last_error: null,
+        last_market_id: "0xbtc",
+        lap_index: 2,
+      },
+      markets: [
+        {
+          marketId: "0xbtc",
+          asset: "BTC",
+          intervalSec: "900",
+          onchainStatus: "Locked",
+          pool: "0x1",
+          livePrice: 77204.1,
+          openPrice: 77150.21,
+        },
+      ],
+      proof: {
+        orders: [
+          {
+            tx_hash: "0xfill2",
+            fill_class: "FILL",
+            filled: "2030000",
+            market_id: "0xbtc",
+            lap_index: 2,
+            created_at: "2026-09-10T17:20:26.000Z",
+            price: "257000",
+            quantity: "2030000",
+            kind: "BUY_NO",
+          },
+        ],
+        settlements: [],
+        records: [],
+      },
+      now: Date.now(),
+      history: [
+        {
+          id: "2",
+          lap_index: 2,
+          market_id: "0xbtc",
+          pool: null,
+          state: "WAITING_SETTLEMENT",
+          correlation_id: null,
+          created_at: "2026-09-10T17:20:26.000Z",
+          asset: "BTC",
+          interval_sec: "900",
+          entry_cost: "1508290",
+        },
+      ],
+    });
+    expect(lap?.position?.side).toBe("DOWN");
+    expect(lap?.position?.stake).toBeCloseTo(1.50829);
+    expect(lap?.position?.entryPrice).toBeCloseTo(0.743);
+    expect(lap?.order?.stake).toBeCloseTo(1.50829);
   });
 });
 

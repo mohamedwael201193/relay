@@ -246,6 +246,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
       protectedCount,
     },
     lastResult: builtResult,
+    resultOpen: isNewResult ? true : prev.resultOpen,
     resultSeen: isNewResult ? false : prev.resultSeen,
     notifications: lapNotes.length
       ? [...lapNotes, ...prev.notifications.filter((n) => !lapNotes.some((x) => x.id === n.id))].slice(0, 40)

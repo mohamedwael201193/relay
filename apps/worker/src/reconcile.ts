@@ -256,7 +256,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
           resolved: settlement.resolved,
           voided: settlement.voided,
           payoutNumerators: settlement.payoutNumerators,
-          redeemTx: settlement.redeemTx,
+          redeemTx: settlement.redeemTx ?? settlement.syncVaultTx,
         },
       });
       await go(nextState, { lastMarketId: lastOrder.market_id });

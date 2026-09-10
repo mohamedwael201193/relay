@@ -165,9 +165,9 @@ export interface Position {
   marketId: string;
   side: Side;
   stake: number;
-  entryPrice: number; // UP-probability at entry
+  entryPrice: number; // price paid per contract in this side's terms
   quantity: number; // contracts = stake / entryPrice
-  markPrice: number; // current fair UP-probability
+  markPrice: number; // current fair in the same terms as entryPrice
 }
 
 /* ── proof / verification ───────────────────────────────────── */

@@ -14,15 +14,14 @@ function glyphFrom(addr: string) {
   return { hue: Math.abs(n) % 360, shape: Math.abs(n) % 4 };
 }
 
-/** Consecutive verified wins from backend lap states. Voids keep the run; the client never increments. */
+/** Consecutive verified wins from backend lap states. Voids keep the run; open laps do not reset it. */
 export function streakFromHistory(laps: HistoryLap[]): { current: number; best: number } {
   let run = 0;
   let best = 0;
   for (const lap of laps) {
     if (lap.state === "SETTLED_VOID") continue;
     if (lap.shielded && lap.state === "SETTLED_LOSS") continue;
-    if (lap.state === "FILLED" || lap.state === "ORDER_SUBMITTED" || lap.state === "PARTIAL_FILL") continue;
-    if (lap.state === "SETTLED_WIN") {
+    if (lap.state === "SETTLED_WIN" || lap.state === "REDEEMED") {
       run += 1;
       if (run > best) best = run;
       continue;
@@ -115,6 +114,29 @@ export function sideFromKind(kind?: string | number | null): "UP" | "DOWN" {
   const k = String(kind ?? "").toUpperCase();
   if (k === "BUY_NO" || k === "NO" || k === "DOWN" || k === "SELL_YES" || k === "1") return "DOWN";
   return "UP";
+}
+
+function microUsd(raw: string | number | null | undefined): number {
+  if (raw == null || raw === "") return Number.NaN;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) ? n / 1e6 : Number.NaN;
+}
+
+/**
+ * DreamDEX `placeBinaryOrder` price is always YES-terms.
+ * The Hold card / tape quote the price paid in the position's own terms
+ * (NO = 1 − YES), matching vault escrow `qty * (unit − yes) / unit`.
+ */
+export function sideEntryFromYes(yes: number, side: "UP" | "DOWN"): number {
+  if (!Number.isFinite(yes) || yes < 0) return 0;
+  if (side === "DOWN") return yes >= 1 ? 0 : 1 - yes;
+  return yes;
+}
+
+export function collateralFromYes(yes: number, qty: number, side: "UP" | "DOWN"): number {
+  const paid = sideEntryFromYes(yes, side);
+  if (!(paid > 0) || !(qty > 0)) return 0;
+  return paid * qty;
 }
 
 export function assetFromMarket(
@@ -234,7 +256,8 @@ export function liveLapFromState(opts: {
   if (!market) {
     return null;
   }
-  const lastOrder = opts.proof?.orders.at(-1);
+  const lapIndex = opts.row.lap_index || 0;
+  const lastOrder = opts.proof?.orders.find((o) => o.lap_index === lapIndex);
   const verifiedFill = lastOrder && fillIsVerified(lastOrder.fill_class);
   const side = sideFromKind((lastOrder as { kind?: string | number | null } | undefined)?.kind);
   const phase: LapPhase =
@@ -247,6 +270,12 @@ export function liveLapFromState(opts: {
   const elapsed = Math.max(0, Math.min(windowTotal, opts.now - market.opensAt));
   const fillYes = lastOrder?.price ? Number(lastOrder.price) / 1e6 : 0;
   const qty = lastOrder?.quantity ? Number(lastOrder.quantity) / 1e6 : 0;
+  const entryPaid = sideEntryFromYes(fillYes, side);
+  const histStake = microUsd(hist?.entry_cost);
+  const stake =
+    Number.isFinite(histStake) && histStake > 0
+      ? histStake
+      : collateralFromYes(fillYes, qty, side);
   const fromRow =
     raw && Number.isFinite(Number(raw.livePrice)) && Number(raw.livePrice) > 0
       ? Number(raw.livePrice)
@@ -267,10 +296,10 @@ export function liveLapFromState(opts: {
             lapNumber: opts.row.lap_index,
             marketId: lastOrder.market_id,
             side,
-            stake: fillYes && qty ? fillYes * qty : 0,
-            entryPrice: fillYes || 0,
+            stake,
+            entryPrice: entryPaid,
             quantity: qty,
-            markPrice: fillYes || 0,
+            markPrice: entryPaid,
           }
         : null,
     order: lastOrder
@@ -280,7 +309,7 @@ export function liveLapFromState(opts: {
           side,
           price: fillYes,
           quantity: qty,
-          stake: fillYes * qty,
+          stake,
           placedAt: Date.parse(lastOrder.created_at) || opts.now,
           status: verifiedFill ? "FILLED" : "PLACED",
           tx: { hash: lastOrder.tx_hash, block: 0, at: Date.parse(lastOrder.created_at) || opts.now },
@@ -327,10 +356,25 @@ function labelForState(state: string, verifiedFill: boolean): string {
 }
 
 function historyOutcome(h: HistoryLap, settle: ProofBundle["settlements"][number] | undefined): Lap["outcome"] | null {
-  if (h.state === "SETTLED_WIN") return "WIN";
+  if (h.state === "SETTLED_WIN" || h.state === "REDEEMED") return "WIN";
   if (h.state === "SETTLED_LOSS") return "LOSS";
   if (h.state === "SETTLED_VOID" || settle?.voided) return "VOID";
   return null;
+}
+
+function marketOutcomeFromSettle(
+  settle: ProofBundle["settlements"][number] | undefined,
+  outcome: Lap["outcome"],
+): Outcome {
+  if (settle?.voided || outcome === "VOID") return "VOID";
+  const nums = settle?.payout_numerators;
+  if (Array.isArray(nums) && nums.length >= 2) {
+    const yes = Number(nums[0]);
+    const no = Number(nums[1]);
+    if (yes > 0 && !(no > 0)) return "UP";
+    if (no > 0 && !(yes > 0)) return "DOWN";
+  }
+  return outcome === "LOSS" ? "DOWN" : "UP";
 }
 
 export function lapsFromHistory(
@@ -346,7 +390,7 @@ export function lapsFromHistory(
     const verified = fillIsVerified(order?.fill_class);
     if (!verified || !order) return [];
     const outcome = historyOutcome(h, settle) ?? "OPEN";
-    const price = order.price ? Number(order.price) / 1e6 : 0;
+    const yes = order.price ? Number(order.price) / 1e6 : 0;
     const qty = order.quantity ? Number(order.quantity) / 1e6 : 0;
     const filledQty = order.filled ? Number(order.filled) / 1e6 : 0;
     const placedAt = Date.parse(h.created_at) || 0;
@@ -354,15 +398,19 @@ export function lapsFromHistory(
     const asset = assetFromMarket(h.market_id, h, markets);
     const side = sideFromKind((order as { kind?: string | number | null }).kind);
     const cadence = cadenceFromInterval(h.interval_sec ?? markets.find((m) => m.marketId.toLowerCase() === h.market_id.toLowerCase())?.intervalSec);
-    const entryCost = h.entry_cost != null && h.entry_cost !== "" ? Number(h.entry_cost) / 1e6 : NaN;
-    const stake = Number.isFinite(entryCost) ? entryCost : price * (filledQty || qty);
+    const entryPaid = sideEntryFromYes(yes, side);
+    const entryCost = microUsd(h.entry_cost);
+    const stake =
+      Number.isFinite(entryCost) && entryCost > 0
+        ? entryCost
+        : collateralFromYes(yes, filledQty || qty, side);
     const pnl =
       outcome === "OPEN"
         ? 0
         : h.pnl != null && h.pnl !== ""
           ? Number(h.pnl) / 1e6
           : Number.NaN;
-    const marketOutcome: Outcome = settle?.voided ? "VOID" : outcome === "LOSS" ? "DOWN" : "UP";
+    const marketOutcome = marketOutcomeFromSettle(settle, outcome);
     const mkt = markets.find((m) => m.marketId.toLowerCase() === h.market_id.toLowerCase());
     const histOpen = Number(h.open_price);
     const histClose = Number(h.close_price);
@@ -392,7 +440,7 @@ export function lapsFromHistory(
       },
       side,
       stake,
-      entryPrice: price,
+      entryPrice: entryPaid,
       outcome,
       marketOutcome,
       pnl,
@@ -403,9 +451,9 @@ export function lapsFromHistory(
         id: `ord-${h.lap_index}`,
         kind: "IOC" as const,
         side,
-        price,
+        price: yes,
         quantity: qty,
-        stake: price * qty,
+        stake,
         placedAt,
         status: "FILLED",
         tx,
@@ -414,7 +462,7 @@ export function lapsFromHistory(
       fill: {
         id: `fil-${h.lap_index}`,
         orderId: `ord-${h.lap_index}`,
-        price,
+        price: yes,
         quantity: filledQty,
         filledAt: placedAt,
         tx,
