@@ -16,9 +16,10 @@ export function pickOwnedVault(
   const hinted = vaultHint?.toLowerCase() ?? null;
   if (hinted) {
     const hit = byVault.get(hinted);
-    if (hit && hit.state !== "KILLED") return hinted;
+    if (hit && !DEAD_STATES.has(hit.state)) return hinted;
   }
-  const live = rows.find((r) => r.state !== "KILLED");
+  const live =
+    rows.find((r) => !DEAD_STATES.has(r.state)) ?? rows.find((r) => r.state !== "KILLED");
   if (live) return live.vault.toLowerCase();
   if (hinted && byVault.has(hinted)) return hinted;
   return rows[0]?.vault.toLowerCase() ?? null;

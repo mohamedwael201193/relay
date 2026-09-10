@@ -414,7 +414,7 @@ export function DeployScreen() {
           {runner != null && (
             <div className="mt-6 flex items-center gap-3 rounded-xl border-2 border-flame bg-flame/10 px-4 py-3">
               <span className="mlabel text-flame">
-                REDEPLOYING RESETS THE DEMO BANKROLL TO YOUR NEW BUDGET.
+                REDEPLOY CREATES A NEW VAULT. THE PREVIOUS RUNNER STAYS STOPPED.
               </span>
             </div>
           )}

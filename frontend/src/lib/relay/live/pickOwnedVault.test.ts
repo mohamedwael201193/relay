@@ -34,6 +34,19 @@ describe("pickOwnedVault", () => {
   it("keeps a killed owned vault when that is all the owner has (withdraw)", () => {
     expect(pickOwnedVault([{ vault: B, state: "KILLED" }], B)).toBe(B);
   });
+
+  it("prefers ACTIVE over a STOPPED leftover hint for the same owner", () => {
+    const next = "0x427f68e6f19b43ea108711edef7b1d9074af8887";
+    expect(
+      pickOwnedVault(
+        [
+          { vault: B, state: "STOPPED" },
+          { vault: next, state: "ACTIVE" },
+        ],
+        B,
+      ),
+    ).toBe(next);
+  });
 });
 
 describe("selectDeployVault", () => {
