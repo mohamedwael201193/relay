@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetFromMarket, bookSnapshotFromLive, impliedStartBankroll, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromLaps, sideFromKind, streakFromHistory } from "./apply";
+import { assetFromMarket, bookSnapshotFromLive, impliedStartBankroll, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromBoosts, notificationsFromLaps, relationshipsFromArenaBoosts, sideFromKind, streakFromHistory } from "./apply";
 import type { HistoryLap, LiveMarketRow, ProofBundle } from "../api/client";
 import type { Lap } from "../types";
 
@@ -471,5 +471,66 @@ describe("bookSnapshotFromLive", () => {
       askDown: [],
       spread: 0,
     });
+  });
+});
+
+describe("relationshipsFromArenaBoosts", () => {
+  it("maps BoostController rows onto the public ticker graph", () => {
+    const rel = relationshipsFromArenaBoosts(
+      [
+        {
+          leader_vault: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          child_vault: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          owner: "0xcccccccccccccccccccccccccccccccccccccccc",
+          budget: "25000000",
+          created_at: "2026-09-10T00:00:00.000Z",
+        },
+      ],
+      [
+        {
+          rank: 1,
+          runnerId: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          name: "Night Shift",
+          ownerHandle: "@aaaaaa",
+          strategy: "Follow the Book",
+          bias: "FOLLOW",
+          streak: 0,
+          bestStreak: 0,
+          pnl7d: 0,
+          pnlLifetime: 0,
+          winRate: 0,
+          laps: 0,
+          followers: 0,
+          boosters: 1,
+          status: "RUNNING",
+          delta: 0,
+          verified: false,
+          glyph: { hue: 0, shape: 0 },
+          spark: [],
+        },
+      ],
+    );
+    expect(rel[0].runnerName).toBe("Night Shift");
+    expect(rel[0].amount).toBe(25);
+    expect(rel[0].mirroredRunnerId).toBe("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    expect(rel[0].boosterHandle).toMatch(/^@cccc/);
+  });
+
+  it("notifies the leader only for new child vaults", () => {
+    const next = relationshipsFromArenaBoosts(
+      [
+        {
+          leader_vault: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          child_vault: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          owner: "0xcccccccccccccccccccccccccccccccccccccccc",
+          budget: "10000000",
+          created_at: "2026-09-10T00:00:00.000Z",
+        },
+      ],
+      [],
+    );
+    expect(notificationsFromBoosts([], next, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toHaveLength(1);
+    expect(notificationsFromBoosts(next, next, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toEqual([]);
+    expect(notificationsFromBoosts([], next, "0xdddddddddddddddddddddddddddddddddddddddd")).toEqual([]);
   });
 });

@@ -2,10 +2,8 @@
 
 /**
  * RELAY — live boost ticker.
- * A dark marquee band of recent boost/follow/rank events, synthesized
- * deterministically from the arena array (seeded variety, no randomness
- * on paint). Re-derives when ranks move — the arena refreshes, so does
- * the chatter.
+ * Production lists BoostController events from /v1/arena.
+ * Demo mode keeps seeded chatter derived from the arena array.
  */
 
 import { useMemo } from "react";
@@ -13,7 +11,7 @@ import { useMemo } from "react";
 import { useRelay } from "@/lib/relay/engine/store";
 import { isLiveMode } from "@/lib/relay/live/mode";
 import { cn } from "@/lib/utils";
-import { tickerItems } from "./synth";
+import { tickerItems, type TickerItem } from "./synth";
 
 const TONE: Record<string, string> = {
   lime: "text-lime",
@@ -23,7 +21,17 @@ const TONE: Record<string, string> = {
 
 export function BoostTicker() {
   const arena = useRelay((s) => s.arena);
-  const items = useMemo(() => (isLiveMode() ? [] : tickerItems(arena)), [arena]);
+  const boosts = useRelay((s) => s.boosts);
+  const items = useMemo((): TickerItem[] => {
+    if (!isLiveMode()) return tickerItems(arena);
+    return boosts.map((b) => ({
+      id: b.mirroredRunnerId,
+      pre: `${b.boosterHandle ?? "a runner"} boosted`,
+      hot: b.runnerName,
+      post: b.amount > 0 ? ` · $${b.amount.toFixed(2)}` : "",
+      tone: "flame" as const,
+    }));
+  }, [arena, boosts]);
 
   if (items.length === 0) return null;
   const doubled = [...items, ...items];

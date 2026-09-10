@@ -80,7 +80,7 @@ export const relayApi = {
       { timeoutMs: 45_000 },
     );
   },
-  arena: () => request<{ runners: ArenaRow[] }>("/v1/arena"),
+  arena: () => request<{ runners: ArenaRow[]; boosts?: ArenaBoost[] }>("/v1/arena"),
   runnersByOwner: (owner: string) =>
     request<{ runners: RunnerRow[] }>(`/v1/runners?owner=${encodeURIComponent(owner)}`),
   runner: (vault: string) => request<RunnerRow>(`/v1/runners/${vault}`),
@@ -155,6 +155,17 @@ export type LiveMarketRow = {
   } | null;
 };
 
+export type ArenaBoost = {
+  id?: string;
+  leader_vault: string;
+  child_vault: string;
+  owner: string;
+  config_hash?: string | null;
+  budget?: string | null;
+  tx_hash?: string | null;
+  created_at: string;
+};
+
 export type ArenaRow = {
   vault: string;
   owner: string;
@@ -173,6 +184,7 @@ export type ArenaRow = {
   bias?: string | null;
   interval_sec?: string | null;
   assets?: string[] | null;
+  boosters?: string | number;
 };
 
 export type HistoryLap = {

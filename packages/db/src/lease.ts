@@ -330,3 +330,68 @@ export async function persistWorkerStep(input: {
     );
   });
 }
+
+export type BoostRow = {
+  id: string;
+  leader_vault: string;
+  child_vault: string;
+  owner: string;
+  config_hash: string | null;
+  budget: string | null;
+  tx_hash: string | null;
+  created_at: string;
+};
+
+export async function persistBoost(input: {
+  leaderVault: string;
+  childVault: string;
+  owner: string;
+  configHash?: string | null;
+  budget?: string | null;
+  txHash?: string | null;
+}): Promise<BoostRow> {
+  return withPool(async (c) => {
+    const row = await c.query<BoostRow>(
+      `INSERT INTO boosts (leader_vault, child_vault, owner, config_hash, budget, tx_hash)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (child_vault) DO UPDATE SET
+         leader_vault = EXCLUDED.leader_vault,
+         owner = EXCLUDED.owner,
+         config_hash = COALESCE(EXCLUDED.config_hash, boosts.config_hash),
+         budget = COALESCE(EXCLUDED.budget, boosts.budget),
+         tx_hash = COALESCE(EXCLUDED.tx_hash, boosts.tx_hash)
+       RETURNING id, leader_vault, child_vault, owner, config_hash, budget, tx_hash, created_at`,
+      [
+        input.leaderVault.toLowerCase(),
+        input.childVault.toLowerCase(),
+        input.owner.toLowerCase(),
+        input.configHash ?? null,
+        input.budget ?? null,
+        input.txHash ?? null,
+      ],
+    );
+    return row.rows[0];
+  });
+}
+
+export async function listBoostCounts(): Promise<Record<string, number>> {
+  return withPool(async (c) => {
+    const r = await c.query<{ leader_vault: string; n: string }>(
+      `SELECT leader_vault, COUNT(*)::text AS n FROM boosts GROUP BY leader_vault`,
+    );
+    const out: Record<string, number> = {};
+    for (const row of r.rows) out[row.leader_vault.toLowerCase()] = Number(row.n);
+    return out;
+  });
+}
+
+export async function listRecentBoosts(limit = 24): Promise<BoostRow[]> {
+  return withPool(async (c) => {
+    const r = await c.query<BoostRow>(
+      `SELECT id, leader_vault, child_vault, owner, config_hash, budget, tx_hash, created_at
+       FROM boosts ORDER BY created_at DESC LIMIT $1`,
+      [limit],
+    );
+    return r.rows;
+  });
+}

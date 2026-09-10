@@ -36,7 +36,9 @@ import {
   liveFeedHistory,
   liveLapFromState,
   bookSnapshotFromLive,
+  notificationsFromBoosts,
   notificationsFromLaps,
+  relationshipsFromArenaBoosts,
   runnerFromRow,
   streakFromHistory,
 } from "@/lib/relay/live/apply";
@@ -128,10 +130,12 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
   const listed = await relayApi.runnersByOwner(owner);
   const vault = pickOwnedVault(listed.runners, vaultHint);
   if (!vault) {
-    const arena = await relayApi.arena().catch(() => ({ runners: [] }));
+    const arena = await relayApi.arena().catch(() => ({ runners: [] as never[], boosts: [] as never[] }));
+    const mappedArena = arenaFromRows(arena.runners ?? [], null);
     useRelay.setState({
       ...ownerBoundReset(),
-      arena: arenaFromRows(arena.runners ?? [], null),
+      arena: mappedArena,
+      boosts: relationshipsFromArenaBoosts(arena.boosts ?? [], mappedArena),
     });
     return;
   }
@@ -204,6 +208,10 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
       prev.lastResult.lap !== builtResult!.lap ||
       prev.lastResult.outcome !== builtResult!.outcome);
   const lapNotes = isNewResult ? notificationsFromLaps(prev.laps, mappedLaps) : [];
+  const mappedArena = arenaFromRows(arena.runners ?? [], vault);
+  const mappedBoosts = relationshipsFromArenaBoosts(arena.boosts ?? [], mappedArena);
+  const boostNotes = notificationsFromBoosts(prev.boosts, mappedBoosts, vault);
+  const incomingNotes = [...boostNotes, ...lapNotes];
   const liveLap = liveLapFromState({
     row,
     markets: marketsRows,
@@ -231,7 +239,8 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     liveLap,
     calendar: calendarFromMarkets(marketsRows, now),
     laps: mappedLaps,
-    arena: arenaFromRows(arena.runners ?? [], vault),
+    arena: mappedArena,
+    boosts: mappedBoosts,
     bankroll: vaultBal,
     startBankroll: impliedStartBankroll(vaultBal, mappedLaps),
     peakBankroll: Math.max(useRelay.getState().peakBankroll, vaultBal),
@@ -246,8 +255,8 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     lastResult: builtResult,
     resultOpen: isNewResult ? true : prev.resultOpen,
     resultSeen: isNewResult ? false : prev.resultSeen,
-    notifications: lapNotes.length
-      ? [...lapNotes, ...prev.notifications.filter((n) => !lapNotes.some((x) => x.id === n.id))].slice(0, 40)
+    notifications: incomingNotes.length
+      ? [...incomingNotes, ...prev.notifications.filter((n) => !incomingNotes.some((x) => x.id === n.id))].slice(0, 40)
       : prev.notifications,
     now,
     priceHistory,
@@ -652,15 +661,22 @@ export function LiveBridge() {
         const [arena, net] = await Promise.all([relayApi.arena(), relayApi.network().catch(() => publicNetwork())]);
         if (cancelled) return;
         const myVault = useRelay.getState().vaultAddress;
-        useRelay.setState({
-          arena: arenaFromRows(arena.runners ?? [], myVault),
+        const mappedArena = arenaFromRows(arena.runners ?? [], myVault);
+        const mappedBoosts = relationshipsFromArenaBoosts(arena.boosts ?? [], mappedArena);
+        const boostNotes = notificationsFromBoosts(useRelay.getState().boosts, mappedBoosts, myVault);
+        useRelay.setState((s) => ({
+          arena: mappedArena,
+          boosts: mappedBoosts,
           apiError: null,
-        });
+          notifications: boostNotes.length
+            ? [...boostNotes, ...s.notifications.filter((n) => !boostNotes.some((x) => x.id === n.id))].slice(0, 40)
+            : s.notifications,
+        }));
         void net;
       } catch (e) {
         if (!cancelled) {
           reportApiError((e as Error).message);
-          useRelay.setState({ arena: [] });
+          useRelay.setState({ arena: [], boosts: [] });
         }
       }
     }

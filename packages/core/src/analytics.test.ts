@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateArena,
+  attachBoostCounts,
   expectedFairPnl,
   streakFromLapStates,
   streakFromOutcomes,
   summarizeLaps,
 } from "./analytics.js";
+import { boostConfigHash } from "./vaultOps.js";
 
 describe("summarizeLaps", () => {
   it("gold: 3 wins, 2 losses, 1 void, 1 open → 60% / 40% with n=5", () => {
@@ -95,5 +97,26 @@ describe("aggregateArena", () => {
     expect(rows[2].verified_laps).toBe(0);
     expect(rows[0].bias).toBe("FOLLOW");
     expect(rows[0].interval_sec).toBe("60");
+  });
+
+  it("attaches on-chain boost counts without inventing missing leaders", () => {
+    const rows = attachBoostCounts(
+      [{ vault: "0xAa" }, { vault: "0xbb" }],
+      { "0xaa": 3 },
+    );
+    expect(rows[0].boosters).toBe(3);
+    expect(rows[1].boosters).toBe(0);
+  });
+});
+
+describe("boostConfigHash", () => {
+  it("is deterministic for the cloned policy", () => {
+    const a = boostConfigHash("FOLLOW", "900", ["BTC", "ETH"]);
+    const b = boostConfigHash("FOLLOW", "900", ["BTC", "ETH"]);
+    const c = boostConfigHash("UP", "900", ["BTC", "ETH"]);
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+    expect(a.startsWith("0x")).toBe(true);
+    expect(a.length).toBe(66);
   });
 });

@@ -248,3 +248,14 @@ export function aggregateArena(rows: ArenaAggInput[]): ArenaAggRow[] {
   });
   return out;
 }
+
+/** On-chain boost graph counts, keyed by leader vault. Missing keys stay 0, never invented. */
+export function attachBoostCounts<T extends { vault: string }>(
+  rows: T[],
+  counts: Record<string, number>,
+): Array<T & { boosters: number }> {
+  return rows.map((row) => ({
+    ...row,
+    boosters: counts[row.vault.toLowerCase()] ?? 0,
+  }));
+}

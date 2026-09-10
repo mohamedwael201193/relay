@@ -10,8 +10,11 @@ import {
   SHANNON_ADDRESSES,
   SHANNON_CHAIN_ID,
   aggregateArena,
+  attachBoostCounts,
   derivedPnlRaw,
   deployOwnedVault,
+  boostViaController,
+  boostConfigHash,
   loadEnv,
   loadShannonDeployment,
   normalizePrivateKey,
@@ -24,9 +27,12 @@ import {
 import {
   ensureRunner,
   getRunnerByVault,
+  listBoostCounts,
   listLaps,
   listProof,
+  listRecentBoosts,
   listRunnersByOwner,
+  persistBoost,
   pingDb,
   setRunnerState,
   updateRunnerPolicy,
@@ -204,6 +210,7 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
           operator: dep?.deployer ?? null,
           opsVault: dep?.vault ?? null,
           vault: dep?.vault ?? null,
+          boostController: dep?.boostController ?? null,
           rpcUrl: process.env.SOMNIA_SHANNON_RPC_URL?.trim() || DEFAULT_SHANNON_RPC,
           explorer: "https://shannon-explorer.somnia.network",
           doctorFailClosed: d.failClosed,
@@ -240,22 +247,30 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
             shielded?: boolean | string | null;
           }>;
         });
+        const [boostCounts, recentBoosts] = await Promise.all([
+          listBoostCounts().catch(() => ({}) as Record<string, number>),
+          listRecentBoosts(24).catch(() => []),
+        ]);
         json(res, 200, {
-          runners: aggregateArena(
-            joinRows.map((row) => ({
-              vault: row.vault,
-              owner: row.owner,
-              state: row.state,
-              lap_state: row.lap_state,
-              pnl: derivedPnlRaw(row.pnl, row.entry_cost, row.redeem_value),
-              created_at: row.created_at,
-              bias: row.bias,
-              interval_sec: row.interval_sec,
-              assets: row.assets,
-              shielded: row.shielded,
-            })),
+          runners: attachBoostCounts(
+            aggregateArena(
+              joinRows.map((row) => ({
+                vault: row.vault,
+                owner: row.owner,
+                state: row.state,
+                lap_state: row.lap_state,
+                pnl: derivedPnlRaw(row.pnl, row.entry_cost, row.redeem_value),
+                created_at: row.created_at,
+                bias: row.bias,
+                interval_sec: row.interval_sec,
+                assets: row.assets,
+                shielded: row.shielded,
+              })),
+            ),
+            boostCounts,
           ),
-          note: "win_rate = wins/(wins+losses); voids and open excluded; pnl is verified tape; no synthetic followers",
+          boosts: recentBoosts,
+          note: "win_rate = wins/(wins+losses); voids and open excluded; pnl is verified tape; boosters from BoostController graph",
         });
         return;
       }
@@ -340,27 +355,59 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
         const budgetUsd = Math.max(1, Number(body.budget) || 100);
         const stopRaw = Number(body.stop ?? body.stopLoss);
         const stopUsd = Math.min(Math.max(1, Number.isFinite(stopRaw) && stopRaw > 0 ? stopRaw : 30), budgetUsd);
-        const created = await deployOwnedVault(privateKeyToAccount(key), auth.owner, {
+        const leader = boostOf ? await getRunnerByVault(boostOf) : null;
+        const bias = parseBias(body.bias ?? leader?.bias);
+        const intervalSec = parseCadence({
+          ...body,
+          cadence: body.cadence ?? leader?.interval_sec,
+          intervalSec: body.intervalSec ?? leader?.interval_sec,
+        });
+        const assets = parseAssets(body.assets != null ? body : { assets: leader?.assets });
+        const caps = {
           budget: BigInt(Math.round(budgetUsd * 1e6)),
           perWindowCap: BigInt(Math.round(budgetUsd * 1e6)),
           maxDailyLoss: BigInt(Math.round(stopUsd * 1e6)),
           maxOutstanding: BigInt(Math.round(budgetUsd * 1e6)),
-        });
+        };
+        const account = privateKeyToAccount(key);
+        let created: { vault: string; tx: string };
+        if (boostOf) {
+          const controller = dep?.boostController;
+          if (!controller) {
+            json(res, 503, { error: "boost_controller_missing" });
+            return;
+          }
+          created = await boostViaController(
+            account,
+            controller,
+            boostOf as Address,
+            auth.owner,
+            boostConfigHash(bias, intervalSec, assets),
+            caps,
+          );
+        } else {
+          created = await deployOwnedVault(account, auth.owner, caps);
+        }
         const row = await ensureRunner({
           vault: created.vault,
           owner: auth.owner,
           operator: "0x0000000000000000000000000000000000000000",
         });
-        const leader = boostOf ? await getRunnerByVault(boostOf) : null;
         const policy = await updateRunnerPolicy(row.id, {
-          bias: parseBias(body.bias ?? leader?.bias),
-          intervalSec: parseCadence({
-            ...body,
-            cadence: body.cadence ?? leader?.interval_sec,
-            intervalSec: body.intervalSec ?? leader?.interval_sec,
-          }),
-          assets: parseAssets(body.assets != null ? body : { assets: leader?.assets }),
+          bias,
+          intervalSec,
+          assets,
         });
+        if (boostOf) {
+          await persistBoost({
+            leaderVault: boostOf,
+            childVault: created.vault,
+            owner: auth.owner,
+            configHash: boostConfigHash(bias, intervalSec, assets),
+            budget: caps.budget.toString(),
+            txHash: created.tx,
+          });
+        }
         json(res, 200, { runner: policy, deployTx: created.tx, vault: created.vault });
         return;
       }

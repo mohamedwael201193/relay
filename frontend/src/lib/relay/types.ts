@@ -337,6 +337,7 @@ export interface BoostRelationship {
   amount: number;
   boostedAt: number;
   mirroredRunnerId: string;
+  boosterHandle?: string;
 }
 
 /* ── notifications ──────────────────────────────────────────── */

@@ -7,9 +7,13 @@ export {
   listRunnersByOwner,
   listLaps,
   listProof,
+  persistBoost,
+  listBoostCounts,
+  listRecentBoosts,
   persistWorkerStep,
   releaseRunner,
   setRunnerState,
   updateRunnerPolicy,
   type RunnerRow,
+  type BoostRow,
 } from "./lease.js";

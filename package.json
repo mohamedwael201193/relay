@@ -21,6 +21,7 @@
     "harness": "tsx scripts/harness.ts",
     "faucet": "tsx scripts/faucet.ts",
     "deploy:shannon": "tsx scripts/deploy-shannon.ts",
+    "deploy:boost": "tsx scripts/deploy-boost-controller.ts",
     "vault:fund": "tsx scripts/vault-funding.ts",
     "place:shannon": "tsx scripts/place-order.ts",
     "settle:shannon": "tsx scripts/settle-shannon.ts",

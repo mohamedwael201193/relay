@@ -1,6 +1,16 @@
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { erc20Abi, parseAbi, type Address, type Hex } from "viem";
+import {
+  decodeEventLog,
+  encodeAbiParameters,
+  erc20Abi,
+  keccak256,
+  parseAbi,
+  parseAbiItem,
+  parseAbiParameters,
+  type Address,
+  type Hex,
+} from "viem";
 import { privateKeyToAccount, type LocalAccount } from "viem/accounts";
 import { SHANNON_ADDRESSES, requiredAddress } from "./addresses.js";
 import { encodeCreate } from "./sendRealtime.js";
@@ -18,6 +28,7 @@ export type ShannonDeployment = {
   manager: Address;
   deployer: Address;
   txs: Hex[];
+  boostController?: Address;
 };
 
 const vaultAbi = parseAbi([
@@ -39,6 +50,25 @@ const vaultAbi = parseAbi([
   "function refillShield()",
 ]);
 
+const boostAbi = parseAbi([
+  "function boost(address leaderVault, address owner_, bytes32 configHash, uint256 budget_, uint256 perWindowCap_, uint256 maxDailyLoss_, uint256 maxOutstanding_) returns (address vault)",
+  "function boostCountOf(address leaderVault) view returns (uint256)",
+  "function leaderOf(address vault) view returns (address)",
+  "function childrenOf(address leaderVault) view returns (address[])",
+  "function relayer() view returns (address)",
+]);
+
+const boostedEvent = parseAbiItem(
+  "event Boosted(address indexed leaderVault, address indexed newVault, address indexed owner, bytes32 configHash, uint256 budget)",
+);
+
+/** Config hash cloned onto a boosted vault. Chain stores the hash; Postgres stores the graph. */
+export function boostConfigHash(bias: string, intervalSec: string, assets: string[]): Hex {
+  return keccak256(
+    encodeAbiParameters(parseAbiParameters("string, string, string[]"), [bias, intervalSec, assets]),
+  );
+}
+
 export function loadShannonDeployment(): ShannonDeployment {
   const p = resolve(process.cwd(), "packages/core/src/deployments/shannon.json");
   return JSON.parse(readFileSync(p, "utf8")) as ShannonDeployment;
@@ -49,6 +79,30 @@ type VaultCreateArtifact = { abi: unknown[]; bytecode: Hex; deployedBytecode: He
 function loadVaultCreate(): VaultCreateArtifact {
   const p = resolve(process.cwd(), "packages/core/src/deployments/RunnerVault.create.json");
   return JSON.parse(readFileSync(p, "utf8")) as VaultCreateArtifact;
+}
+
+function loadBoostCreate(): VaultCreateArtifact {
+  const p = resolve(process.cwd(), "packages/core/src/deployments/BoostController.create.json");
+  return JSON.parse(readFileSync(p, "utf8")) as VaultCreateArtifact;
+}
+
+export function extractBoostControllerArtifact(): VaultCreateArtifact {
+  const src = resolve(process.cwd(), "contracts/out/BoostController.sol/BoostController.json");
+  const j = JSON.parse(readFileSync(src, "utf8")) as {
+    abi: unknown[];
+    bytecode: { object: Hex };
+    deployedBytecode: { object: Hex };
+  };
+  const art: VaultCreateArtifact = {
+    abi: j.abi,
+    bytecode: j.bytecode.object,
+    deployedBytecode: j.deployedBytecode.object,
+  };
+  writeFileSync(
+    resolve(process.cwd(), "packages/core/src/deployments/BoostController.create.json"),
+    JSON.stringify(art),
+  );
+  return art;
 }
 
 export async function deployOwnedVault(
@@ -80,6 +134,99 @@ export async function deployOwnedVault(
     throw new Error(`owned vault deploy failed hash=${rcpt.transactionHash} status=${rcpt.status}`);
   }
   return { vault: rcpt.contractAddress, tx: rcpt.transactionHash, gasUsed: rcpt.gasUsed.toString() };
+}
+
+export async function deployBoostController(
+  account: LocalAccount,
+): Promise<{ controller: Address; tx: Hex; gasUsed: string }> {
+  const art = existsSyncBoostCreate() ? loadBoostCreate() : extractBoostControllerArtifact();
+  const data = encodeCreate(art.abi as never, art.bytecode, [
+    account.address,
+    COLLATERAL,
+    MODULE,
+    ORACLE,
+    6,
+  ]);
+  const gas = somniaCreateGas(art.deployedBytecode);
+  await assertDeployBudget(account, gas);
+  const rcpt = await sendHttp(account, data, { gas });
+  if (rcpt.status !== "success" || !rcpt.contractAddress) {
+    throw new Error(`boost controller deploy failed hash=${rcpt.transactionHash} status=${rcpt.status}`);
+  }
+  return { controller: rcpt.contractAddress, tx: rcpt.transactionHash, gasUsed: rcpt.gasUsed.toString() };
+}
+
+function existsSyncBoostCreate(): boolean {
+  try {
+    loadBoostCreate();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function persistBoostControllerPin(controller: Address, tx: Hex, gasUsed: string): void {
+  const p = resolve(process.cwd(), "packages/core/src/deployments/shannon.json");
+  const cur = JSON.parse(readFileSync(p, "utf8")) as Record<string, unknown>;
+  if (String(cur.vault).toLowerCase() !== "0xd762a7719f0e991413038276a37abf7a417d4d59") {
+    throw new Error("refusing to rewrite shannon.json: ops vault pin moved");
+  }
+  cur.boostController = controller;
+  cur.boostControllerTx = tx;
+  cur.boostControllerGasUsed = gasUsed;
+  writeFileSync(p, `${JSON.stringify(cur, null, 2)}\n`);
+}
+
+/** Relayer-only CREATE of a booster-owned vault. Never the leader's wallet or collateral. */
+export async function boostViaController(
+  account: LocalAccount,
+  controller: Address,
+  leaderVault: Address,
+  owner: Address,
+  configHash: Hex,
+  caps: {
+    budget: bigint;
+    perWindowCap: bigint;
+    maxDailyLoss: bigint;
+    maxOutstanding: bigint;
+  },
+): Promise<{ vault: Address; tx: Hex; gasUsed: string }> {
+  const { encodeFunctionData } = await import("viem");
+  const data = encodeFunctionData({
+    abi: boostAbi,
+    functionName: "boost",
+    args: [
+      leaderVault,
+      owner,
+      configHash,
+      caps.budget,
+      caps.perWindowCap,
+      caps.maxDailyLoss,
+      caps.maxOutstanding,
+    ],
+  });
+  const vaultArt = loadVaultCreate();
+  const gas = somniaCreateGas(vaultArt.deployedBytecode) + 8_000_000n;
+  await assertDeployBudget(account, gas);
+  const rcpt = await sendHttp(account, data, { to: controller, gas });
+  if (rcpt.status !== "success") {
+    throw new Error(`boost failed hash=${rcpt.transactionHash} status=${rcpt.status}`);
+  }
+  for (const log of rcpt.logs) {
+    try {
+      const decoded = decodeEventLog({ abi: [boostedEvent], data: log.data, topics: log.topics });
+      if (decoded.eventName === "Boosted") {
+        return {
+          vault: decoded.args.newVault as Address,
+          tx: rcpt.transactionHash,
+          gasUsed: rcpt.gasUsed.toString(),
+        };
+      }
+    } catch {
+      /* other log */
+    }
+  }
+  throw new Error(`boost vault missing hash=${rcpt.transactionHash}`);
 }
 
 export async function readVaultSnapshot(vault: Address) {

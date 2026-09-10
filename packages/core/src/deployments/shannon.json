@@ -21,5 +21,8 @@
   "priceDecimals": 6,
   "sendPath": "eth_sendRawTransaction",
   "evmVersion": "cancun",
-  "codeGasPerByte": 3125
+  "codeGasPerByte": 3125,
+  "boostController": "0x06cf582e359cdb438d7ae5df08335c9cd5eb34d9",
+  "boostControllerTx": "0x5af5eda35dc32f55adce562d671bb9d79312ab2c97f89a537ff678ed3c105f0b",
+  "boostControllerGasUsed": "52621475"
 }

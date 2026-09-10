@@ -1,6 +1,6 @@
-import type { AppNotification, ArenaRunner, AssetId, BookSnapshot, Lap, LapPhase, LiveLap, MarketWindow, Outcome, Runner, WindowCadence } from "../types";
+import type { AppNotification, ArenaRunner, AssetId, BookSnapshot, BoostRelationship, Lap, LapPhase, LiveLap, MarketWindow, Outcome, Runner, WindowCadence } from "../types";
 import { fillIsVerified, mapBackendState } from "../mapping";
-import type { ArenaRow, HistoryLap, LiveMarketRow, ProofBundle, RunnerRow } from "../api/client";
+import type { ArenaBoost, ArenaRow, HistoryLap, LiveMarketRow, ProofBundle, RunnerRow } from "../api/client";
 import { EMPTY_BOOK } from "../config/network";
 
 function shortHandle(addr: string): string {
@@ -88,7 +88,7 @@ export function arenaFromRows(rows: ArenaRow[], myVault: string | null): ArenaRu
       winRate,
       laps,
       followers: 0,
-      boosters: 0,
+      boosters: Number(r.boosters) || 0,
       status: r.state === "PAUSED" ? "PAUSED" : "RUNNING",
       delta: 0,
       verified: laps > 0,
@@ -543,4 +543,45 @@ export function notificationsFromLaps(prev: Lap[], next: Lap[]): AppNotification
     });
   }
   return out;
+}
+
+export function relationshipsFromArenaBoosts(
+  rows: ArenaBoost[],
+  arena: ArenaRunner[],
+): BoostRelationship[] {
+  return rows.map((b) => {
+    const leader = arena.find((a) => a.runnerId.toLowerCase() === b.leader_vault.toLowerCase());
+    const amt = b.budget != null && b.budget !== "" ? Number(b.budget) / 1e6 : NaN;
+    return {
+      runnerId: b.leader_vault,
+      runnerName: leader?.name ?? shortHandle(b.leader_vault),
+      amount: Number.isFinite(amt) ? amt : 0,
+      boostedAt: Date.parse(b.created_at) || 0,
+      mirroredRunnerId: b.child_vault,
+      boosterHandle: shortHandle(b.owner),
+    };
+  });
+}
+
+export function notificationsFromBoosts(
+  prev: BoostRelationship[],
+  next: BoostRelationship[],
+  myVault: string | null,
+): AppNotification[] {
+  if (!myVault) return [];
+  const seen = new Set(prev.map((b) => b.mirroredRunnerId.toLowerCase()));
+  return next
+    .filter(
+      (b) =>
+        b.runnerId.toLowerCase() === myVault.toLowerCase() &&
+        !seen.has(b.mirroredRunnerId.toLowerCase()),
+    )
+    .map((b) => ({
+      id: `boost-${b.mirroredRunnerId}`,
+      kind: "BOOST" as const,
+      title: `${b.boosterHandle ?? "a runner"} boosted you${b.amount > 0 ? ` · $${b.amount.toFixed(2)}` : ""}`,
+      body: "A new mirrored vault cloned your bias. Their funds, RELAY operator — not your wallet.",
+      at: b.boostedAt || Date.now(),
+      read: false,
+    }));
 }
