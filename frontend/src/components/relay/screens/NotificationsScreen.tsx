@@ -80,8 +80,7 @@ export function NotificationsScreen() {
               What happened while you lived.
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-relaxed text-foam">
-              Fills, settles, streaks, shields and boosts — pushed the moment they
-              happen on-chain.
+              Fills and settlements — pushed when they are verified.
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2.5">

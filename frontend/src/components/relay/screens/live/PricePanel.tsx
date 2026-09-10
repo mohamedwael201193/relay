@@ -62,7 +62,7 @@ export function PricePanel({ className }: { className?: string }) {
         <div className="ml-auto text-right">
           <div className="mlabel text-foam/70">IMPLIED UP</div>
           <div className="data text-2xl font-semibold leading-none mt-1 text-flame">
-            {price > 0 ? cents(probUp) : "—"}
+            {Number.isFinite(probUp) && probUp > 0 ? cents(probUp) : "—"}
           </div>
         </div>
       </div>

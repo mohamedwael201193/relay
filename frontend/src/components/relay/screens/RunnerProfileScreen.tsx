@@ -6,8 +6,7 @@
  * performance, boost/follow CTAs), the screenshot-ready share card,
  * the public lap tape, streak history and risk policy.
  * Your own runner doubles as your public card (real laps, real config);
- * other runners' detail is deterministically derived from their arena
- * entry (seeded rng) — labeled "DERIVED FROM PUBLIC FILLS".
+ * other runners load public history + proof. Boost is not live.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -45,7 +44,6 @@ import { BoostDialog } from "./arena/boost-dialog";
 import { ShareCard } from "./arena/share-card";
 import {
   longestWinRange,
-  shieldsGuess,
   slugFor,
   synthTape,
   synthTicks,
@@ -152,7 +150,7 @@ function AthleteCard({ entry }: { entry: ArenaRunner }) {
     const text = [
       `RELAY — ${entry.name} · ${entry.strategy}`,
       `7D PNL ${signed(entry.pnl7d)} · STREAK ×${entry.streak} · WIN RATE ${pct(entry.winRate)}`,
-      `${entry.laps} LAPS · ${entry.followers} FOLLOWERS · ${entry.boosters} BOOSTERS`,
+      `${entry.laps} LAPS · ${entry.followers} FOLLOWERS`,
       `relay.app/r/${slugFor(entry.name)} — every number verified on-chain`,
     ].join("\n");
     try {
@@ -224,14 +222,14 @@ function AthleteCard({ entry }: { entry: ArenaRunner }) {
         <StatTile label="WIN RATE" value={pct(entry.winRate)} sub={`ON ${entry.laps} LAPS`} />
         <StatTile label="LAPS" value={entry.laps} sub="LIFETIME TAPE" />
         <StatTile label="BEST STREAK" value={`×${entry.bestStreak}`} sub="ALL-TIME" tone="flame" />
-        <StatTile label="FOLLOWERS" value={entry.followers} sub={`${entry.boosters} BOOSTERS`} />
+        <StatTile label="FOLLOWERS" value={entry.followers} sub="PUBLIC WATCHERS" />
       </div>
 
       {/* boosters */}
       <div className="mt-3 flex items-center gap-2.5 rounded-xl border-2 border-lined bg-panel2/60 px-4 py-2.5">
         <BatonGlyph className="h-4 w-auto" aria-hidden />
         <span className="mlabel text-foam">
-          {entry.boosters} BOOSTERS — MIRRORED RUNNERS EARNING THIS EXACT TAPE
+          BOOST NOT LIVE — 0 INDEPENDENT VAULTS MIRRORED FROM THIS TAPE
         </span>
       </div>
 
@@ -529,9 +527,7 @@ function StreakHistory({ entry }: { entry: ArenaRunner }) {
 function RiskPolicy({ entry }: { entry: ArenaRunner }) {
   const config = useRelay((s) => s.config);
   const streakState = useRelay((s) => s.streak);
-  const boosts = useRelay((s) => s.boosts);
   const isYou = !!entry.isYou;
-  const myBoost = boosts.find((b) => b.runnerId === entry.runnerId);
 
   const rows = isYou
     ? [
@@ -548,7 +544,9 @@ function RiskPolicy({ entry }: { entry: ArenaRunner }) {
         {
           icon: <ShieldMark className="h-5 w-5" aria-hidden />,
           label: "SHIELDS",
-          value: `${streakState.shields}/${streakState.shieldsMax} — one loss absorbed without breaking the streak`,
+          value: isLiveMode()
+            ? "Not on-chain yet — streak is verified wins only"
+            : `${streakState.shields}/${streakState.shieldsMax} — one loss absorbed without breaking the streak`,
         },
         {
           icon: <Timer className="h-4 w-4 text-foam" aria-hidden />,
@@ -570,7 +568,7 @@ function RiskPolicy({ entry }: { entry: ArenaRunner }) {
         {
           icon: <ShieldMark className="h-5 w-5" aria-hidden />,
           label: "SHIELDS",
-          value: `${shieldsGuess(entry.streak)} — one loss absorbed without breaking the streak`,
+          value: "Not on-chain — streak is verified wins only",
         },
         {
           icon: <Timer className="h-4 w-4 text-foam" aria-hidden />,
@@ -597,17 +595,8 @@ function RiskPolicy({ entry }: { entry: ArenaRunner }) {
       {!isYou && (
         <div className="border-t-2 border-lined px-5 py-4">
           <div className="mlabel text-foam/60">
-            MIRRORS {entry.ownerHandle}&rsquo;S CONFIG
+            BOOST WOULD DEPLOY YOUR OWN VAULT — NOT LIVE
           </div>
-          {myBoost && (
-            <div className="mt-2.5 flex items-center gap-2.5 rounded-lg border-2 border-flame/60 bg-flame/10 px-3 py-2.5">
-              <FlameMark className="h-4 w-4 shrink-0" aria-hidden />
-              <span className="mlabel text-flame">
-                YOU BOOST · {money(myBoost.amount)} MIRRORED — EARNING THEIR EXACT
-                LAP RESULTS
-              </span>
-            </div>
-          )}
         </div>
       )}
     </Panel>

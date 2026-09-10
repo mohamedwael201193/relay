@@ -154,6 +154,7 @@ export function liveLapFromState(opts: {
   }
   const lastOrder = opts.proof?.orders.at(-1);
   const verifiedFill = lastOrder && fillIsVerified(lastOrder.fill_class);
+  const side = sideFromKind((lastOrder as { kind?: string | number | null } | undefined)?.kind);
   const phase: LapPhase =
     opts.row.state === "ORDER_SUBMITTED" && !verifiedFill
       ? "ORDER"
@@ -178,7 +179,7 @@ export function liveLapFromState(opts: {
             id: `pos-${opts.row.lap_index}`,
             lapNumber: opts.row.lap_index,
             marketId: lastOrder.market_id,
-            side: "UP",
+            side,
             stake: price && qty ? price * qty : 0,
             entryPrice: price || 0,
             quantity: qty,
@@ -189,7 +190,7 @@ export function liveLapFromState(opts: {
       ? {
           id: `ord-${lastOrder.lap_index}`,
           kind: "IOC",
-          side: "UP",
+          side,
           price,
           quantity: qty,
           stake: price * qty,
@@ -211,7 +212,7 @@ export function liveLapFromState(opts: {
           }
         : null,
     price: 0,
-    probUp: price || 0.5,
+    probUp: price > 0 ? price : Number.NaN,
     events: [
       {
         id: `ev-${opts.row.state}`,

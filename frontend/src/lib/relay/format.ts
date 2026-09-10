@@ -30,6 +30,7 @@ export function signedPct(v: number, decimals = 1) {
 
 /** probability quoted like a book price: 0.543 → "54.3¢" */
 export function cents(v: number, decimals = 1) {
+  if (!Number.isFinite(v)) return "—";
   return `${(v * 100).toFixed(decimals)}¢`;
 }
 

@@ -12,6 +12,7 @@ import { Slider } from "@/components/ui/slider";
 import { useRelay } from "@/lib/relay/engine/store";
 import type { AssetId, RunnerConfig, WindowCadence } from "@/lib/relay/types";
 import { money } from "@/lib/relay/format";
+import { isLiveMode } from "@/lib/relay/live/mode";
 import { cn } from "@/lib/utils";
 import { AssetIcon, DownMark, ShieldMark, UpMark } from "../../identity/identity";
 import { Panel } from "../../core/primitives";
@@ -80,7 +81,7 @@ export function RiskPolicySection() {
           <PolicyChip label="ASSETS" value={live.assets.join(" + ")} />
           <PolicyChip label="STREAK MULT" value={`+${Math.round(live.streakMultiplier * 100)}%`} tone="flame" />
           <PolicyChip label="MAX STAKE" value={`${Math.round(live.maxStakePct * 100)}%`} />
-          <PolicyChip label="SHIELDS" value={`${live.shieldsMax} MAX`} tone="lime" />
+          <PolicyChip label="SHIELDS" value={isLiveMode() ? "NOT ON-CHAIN" : `${live.shieldsMax} MAX`} tone="lime" />
           <PolicyChip label="HEADROOM GATE" value={`${Math.round(live.headroomGatePct * 100)}%`} />
         </div>
 
@@ -200,7 +201,7 @@ export function RiskPolicySection() {
               />
             </FieldRow>
 
-            <FieldRow label="SHIELDS" live={`${live.shieldsMax} MAX`} hint="STREAK PROTECTION, MAX HELD AT ONCE">
+            <FieldRow label="SHIELDS" live={isLiveMode() ? "NOT ON-CHAIN" : `${live.shieldsMax} MAX`} hint="NOT ENFORCED ON-CHAIN YET">
               <ChipGroup
                 ariaLabel="Shields"
                 options={SHIELDS}

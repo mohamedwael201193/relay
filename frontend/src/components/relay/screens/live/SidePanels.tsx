@@ -10,22 +10,33 @@ import { Panel } from "@/components/relay/core/primitives";
 import { ProbSplit } from "@/components/relay/core/LapRing";
 import { FlameMark, ShieldMark } from "@/components/relay/identity/identity";
 import { cents, pct, signed } from "@/lib/relay/format";
+import { isLiveMode } from "@/lib/relay/live/mode";
 import { cn } from "@/lib/utils";
 
 /* ── implied probability ────────────────────────────────────── */
 
 export function ProbabilityPanel({ className }: { className?: string }) {
-  const probUp = useRelay((s) => s.liveLap?.probUp ?? 0.5);
+  const raw = useRelay((s) => s.liveLap?.probUp);
+  const ready = Number.isFinite(raw) && (raw as number) > 0 && (raw as number) < 1;
+  const probUp = ready ? (raw as number) : null;
 
   return (
     <Panel label="PROBABILITY · IMPLIED" className={className}>
       <div className="px-5 py-4">
-        <ProbSplit probUp={probUp} />
-        <div className="mt-3 flex items-center justify-between">
-          <span className="data text-sm font-semibold text-lime">UP {pct(probUp)}</span>
-          <span className="data text-sm font-semibold text-ember">DOWN {pct(1 - probUp)}</span>
+        {probUp == null ? (
+          <div className="data text-sm text-foam">NO LIVE BOOK MID</div>
+        ) : (
+          <>
+            <ProbSplit probUp={probUp} />
+            <div className="mt-3 flex items-center justify-between">
+              <span className="data text-sm font-semibold text-lime">UP {pct(probUp)}</span>
+              <span className="data text-sm font-semibold text-ember">DOWN {pct(1 - probUp)}</span>
+            </div>
+          </>
+        )}
+        <div className="mlabel text-foam/50 mt-2.5">
+          {probUp == null ? "UNAVAILABLE — NOT A 50¢ PLACEHOLDER" : "IMPLIED FROM FILL PRICE · SETTLES 0 OR 1"}
         </div>
-        <div className="mlabel text-foam/50 mt-2.5">IMPLIED FROM BOOK MID · SETTLES 0 OR 1</div>
       </div>
     </Panel>
   );
@@ -61,7 +72,9 @@ export function PositionMini({ className }: { className?: string }) {
           <MiniStat label={`ENTRY · ${p.side} TERMS`} value={cents(p.entryPrice)} />
           <MiniStat label={`MARK · ${p.side} TERMS`} value={cents(p.markPrice)} />
         </div>
-        <ProbSplit probUp={lap.probUp} height={8} />
+          {Number.isFinite(lap.probUp) && lap.probUp > 0 ? (
+            <ProbSplit probUp={lap.probUp} height={8} />
+          ) : null}
       </div>
     </Panel>
   );
@@ -108,17 +121,23 @@ export function RunnerStatusRow({ className }: { className?: string }) {
           <FlameMark className="w-3.5 h-4" animated={streak.current > 0} />
           <span className="data font-semibold text-sm text-flame">×{streak.current}</span>
         </span>
-        <span
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border-2 border-lined"
-          aria-label={`${streak.shields} of ${streak.shieldsMax} streak shields charged`}
-        >
-          {Array.from({ length: Math.min(streak.shields, 6) }, (_, i) => (
-            <ShieldMark key={i} className="w-3.5 h-4" filled />
-          ))}
-          {Array.from({ length: Math.min(missingShields, 6 - Math.min(streak.shields, 6)) }, (_, i) => (
-            <ShieldMark key={`empty-${i}`} className="w-3.5 h-4 opacity-35" filled={false} />
-          ))}
-        </span>
+        {isLiveMode() || streak.shieldsMax === 0 ? (
+          <span className="mlabel px-2.5 py-1.5 rounded-lg border-2 border-lined text-foam/80">
+            SHIELDS NOT ON-CHAIN
+          </span>
+        ) : (
+          <span
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border-2 border-lined"
+            aria-label={`${streak.shields} of ${streak.shieldsMax} streak shields charged`}
+          >
+            {Array.from({ length: Math.min(streak.shields, 6) }, (_, i) => (
+              <ShieldMark key={i} className="w-3.5 h-4" filled />
+            ))}
+            {Array.from({ length: Math.min(missingShields, 6 - Math.min(streak.shields, 6)) }, (_, i) => (
+              <ShieldMark key={`empty-${i}`} className="w-3.5 h-4 opacity-35" filled={false} />
+            ))}
+          </span>
+        )}
       </div>
     </Panel>
   );
