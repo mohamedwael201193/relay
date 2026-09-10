@@ -40,6 +40,15 @@ export function filledOrderNeedsSettle(
   return !settlementIsFinal(lastSettle);
 }
 
+/** `BinaryMarket.voidExpired()` opens at expiry + settlementWindow (SDK + DreamDEX docs). */
+export function voidExpiredIsCallable(
+  expiry: bigint,
+  settlementWindow: bigint,
+  blockTimestamp: bigint,
+): boolean {
+  return blockTimestamp >= expiry + settlementWindow;
+}
+
 /** Reconstruct pnl from escrow + redeem when the worker did not persist it. Never invents. */
 export function derivedPnlRaw(
   pnl: string | null | undefined,

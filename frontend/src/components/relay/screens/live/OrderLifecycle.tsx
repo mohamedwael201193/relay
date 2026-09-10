@@ -346,6 +346,8 @@ function HoldBody({
   const pnlTone = pnl > 0 ? "text-lime" : pnl < 0 ? "text-ember" : "text-cream";
   const markTone =
     position.markPrice >= position.entryPrice ? "text-lime" : "text-ember";
+  const backendState = useRelay((s) => s.backendState);
+  const needsAuth = backendState === "WAITING_SETTLEMENT";
 
   return (
     <div>
@@ -400,6 +402,15 @@ function HoldBody({
           </div>
         </div>
       </div>
+      {needsAuth ? (
+        <button
+          type="button"
+          onClick={() => useRelay.getState().authorizeRedeem()}
+          className="mlabel mt-3 w-full rounded-xl border-2 border-lined bg-panel2 py-3 text-cream transition-colors hover:border-lime hover:text-lime focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime"
+        >
+          AUTHORIZE SETTLEMENT
+        </button>
+      ) : null}
     </div>
   );
 }

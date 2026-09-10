@@ -301,6 +301,7 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
         if (marketAddr != a.market) revert PoolMismatch(a.market, marketAddr);
 
         uint256 notional = collateralCost(a.kind, a.price, a.quantity);
+        _grantModuleOutcomeOperator(a.market);
         if (a.kind == 1 || a.kind == 3) {
             address ot = IBinaryMarket(a.market).outcomeToken();
             IOutcomeToken6909(ot).setOperator(a.pool, true);
@@ -349,6 +350,7 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
         if (pool == address(0) || marketAddr == address(0)) revert NotArmed();
         collateral.forceApprove(pool, amount);
         IBinaryPool(pool).mintSet(address(this), address(this), amount);
+        _grantModuleOutcomeOperator(marketAddr);
         lastMintAmount = amount;
         emit Minted(marketId, amount);
     }
@@ -377,11 +379,13 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
 
     function redeemPosition(bytes32 marketId, uint8 outcomeIdx, uint256 amount) external nonReentrant {
         if (amount == 0) revert NothingToRedeem();
+        _grantModuleOutcomeOperator(_marketAddress(marketId));
         module.redeem(0, bytes32(0), marketId, outcomeIdx, amount);
         emit Redeemed(marketId, outcomeIdx, amount);
     }
 
-    function approveOutcomeOperator(address token, bool approved) external onlyOwner {
+    function approveOutcomeOperator(address token, bool approved) external {
+        if (msg.sender != owner && msg.sender != operator) revert NotOperator();
         IOutcomeToken6909(token).setOperator(address(module), approved);
     }
 
@@ -450,6 +454,11 @@ contract RunnerVault is ReentrancyGuard, SomniaEventHandler {
         (, , , , , , , , address marketAddr, , , , , ) = module.markets(marketId);
         if (marketAddr == address(0)) revert NotArmed();
         return marketAddr;
+    }
+
+    function _grantModuleOutcomeOperator(address marketAddr) internal {
+        address ot = IBinaryMarket(marketAddr).outcomeToken();
+        IOutcomeToken6909(ot).setOperator(address(module), true);
     }
 
     function _dayStart(uint256 ts) internal pure returns (uint256) {

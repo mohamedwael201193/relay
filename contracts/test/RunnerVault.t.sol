@@ -189,6 +189,19 @@ contract RunnerVaultTest is Test {
         vault.syncResolution(MARKET);
         vault.redeemPosition(MARKET, 1, 1);
         assertEq(module.redeemCalls(), 1);
+        assertTrue(otoken.isOperator(address(vault), address(module)));
+    }
+
+    function test_operator_approves_outcome_module() public {
+        vm.prank(operator);
+        vault.approveOutcomeOperator(address(otoken), true);
+        assertTrue(otoken.isOperator(address(vault), address(module)));
+    }
+
+    function test_stranger_cannot_approve_outcome() public {
+        vm.prank(stranger);
+        vm.expectRevert(RunnerVault.NotOperator.selector);
+        vault.approveOutcomeOperator(address(otoken), true);
     }
 
     function test_registry_requires_owner() public {

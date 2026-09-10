@@ -449,6 +449,8 @@ export function mockSlice(set: StoreApi<RelayStore>["setState"], get: StoreApi<R
     });
   },
 
+  authorizeRedeem: () => undefined,
+
   /* social … */
   boostRunner: (runnerId, amount) => {
     const s = get();

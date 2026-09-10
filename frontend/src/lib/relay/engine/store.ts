@@ -105,6 +105,9 @@ export const useRelay = create<RelayStore>((set, get) => ({
   chargeShields: () => {
     void getLiveHandlers()?.chargeShields?.();
   },
+  authorizeRedeem: () => {
+    void getLiveHandlers()?.authorizeRedeem?.();
+  },
 
   boostRunner: (runnerId, amount) => {
     const entry = get().arena.find((a) => a.runnerId.toLowerCase() === runnerId.toLowerCase());

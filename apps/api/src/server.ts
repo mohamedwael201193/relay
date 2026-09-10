@@ -436,7 +436,11 @@ export function startApi(listenPort = Number(process.env.PORT ?? 8787)) {
             lastError: row.last_error,
             lapIndex: row.lap_index,
             nextAction:
-              row.state === "FILLED" || row.state === "WAITING_SETTLEMENT" ? "settle" : "discover",
+              row.last_error === "needs_outcome_approval"
+                ? "authorize_redeem"
+                : row.state === "FILLED" || row.state === "WAITING_SETTLEMENT"
+                  ? "settle"
+                  : "discover",
           });
           return;
         }

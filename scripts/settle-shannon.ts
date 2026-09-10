@@ -8,7 +8,8 @@ if (!key) {
 }
 const marketId = (process.argv[2] ??
   "0x00000000000000000000000000000000000000000000000000000000000189a7") as `0x${string}`;
-const out = await settleFilledMarketFromKey(key, marketId);
+const vault = process.argv[3] as `0x${string}` | undefined;
+const out = await settleFilledMarketFromKey(key, marketId, vault);
 console.log(JSON.stringify({
   statusBefore: out.statusBefore,
   statusAfter: out.statusAfter,

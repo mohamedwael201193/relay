@@ -16,6 +16,7 @@ export function emptyLiveState(): Omit<
   | "stopRunner"
   | "withdraw"
   | "chargeShields"
+  | "authorizeRedeem"
   | "boostRunner"
   | "toggleFollow"
   | "openResult"

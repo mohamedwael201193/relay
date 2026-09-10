@@ -4,11 +4,11 @@ import { SHANNON_ADDRESSES, requiredAddress } from "./addresses.js";
 import { getMarketOnchainHttp } from "./onchain.js";
 import { sendHttp, shannonHttpClient } from "./sendHttp.js";
 import { erc20Balance } from "./rpc.js";
+import { voidExpiredIsCallable } from "./settleGate.js";
 import { loadShannonDeployment, writeEvidence } from "./vaultOps.js";
 
 const MODULE = requiredAddress(SHANNON_ADDRESSES.binaryModule, "binaryModule");
 const COLLATERAL = requiredAddress(SHANNON_ADDRESSES.collateral, "collateral");
-const ORACLE = requiredAddress(SHANNON_ADDRESSES.oracleHub, "oracleHub");
 
 const vaultAbi = parseAbi([
   "function syncResolution(bytes32 marketId)",
@@ -26,7 +26,28 @@ const token6909Abi = parseAbi([
   "function isOperator(address owner, address spender) view returns (bool)",
 ]);
 
-const marketAbi = parseAbi(["function outcomeToken() view returns (address)"]);
+const marketAbi = parseAbi([
+  "function outcomeToken() view returns (address)",
+  "function voidExpired()",
+]);
+
+type SettleTx = { name: string; hash: string; status: string };
+
+async function trySend(
+  account: LocalAccount,
+  name: string,
+  data: Hex,
+  to: Address,
+  gas: bigint,
+  txs: SettleTx[],
+): Promise<void> {
+  try {
+    const rcpt = await sendHttp(account, data, { to, gas });
+    txs.push({ name, hash: rcpt.transactionHash, status: rcpt.status });
+  } catch (e) {
+    txs.push({ name, hash: "threw", status: (e as Error).message });
+  }
+}
 
 export async function settleFilledMarket(
   account: LocalAccount,
@@ -38,62 +59,111 @@ export async function settleFilledMarket(
   const client = shannonHttpClient();
   const before = await getMarketOnchainHttp(client, MODULE, marketId);
   const { encodeFunctionData } = await import("viem");
-  const txs: { name: string; hash: string; status: string }[] = [];
+  const txs: SettleTx[] = [];
 
-  if (before.statusLabel === "Trading" || before.statusLabel === "Locked" || before.statusLabel === "Settling") {
-    try {
-      const poke = await sendHttp(
+  if (!before.isResolved && !before.isVoided) {
+    await trySend(
+      account,
+      "pokeOracle",
+      encodeFunctionData({
+        abi: moduleAbi,
+        functionName: "pokeOracle",
+        args: [before.oracleQuestionId],
+      }),
+      MODULE,
+      10_000_000n,
+      txs,
+    );
+    await trySend(
+      account,
+      "syncSettlement",
+      encodeFunctionData({
+        abi: moduleAbi,
+        functionName: "syncSettlement",
+        args: [marketId],
+      }),
+      MODULE,
+      10_000_000n,
+      txs,
+    );
+  }
+
+  let mid = await getMarketOnchainHttp(client, MODULE, marketId);
+  if (!mid.isResolved && !mid.isVoided) {
+    const head = await client.getBlock();
+    if (voidExpiredIsCallable(mid.expiry, mid.settlementWindow, head.timestamp)) {
+      await trySend(
         account,
-        encodeFunctionData({
-          abi: moduleAbi,
-          functionName: "pokeOracle",
-          args: [before.oracleQuestionId],
-        }),
-        { to: MODULE, gas: 10_000_000n },
+        "voidExpired",
+        encodeFunctionData({ abi: marketAbi, functionName: "voidExpired" }),
+        mid.market,
+        10_000_000n,
+        txs,
       );
-      txs.push({ name: "pokeOracle", hash: poke.transactionHash, status: poke.status });
-    } catch (e) {
-      txs.push({ name: "pokeOracle", hash: "threw", status: (e as Error).message });
-    }
-    try {
-      const sync = await sendHttp(
+      await trySend(
         account,
+        "syncSettlement",
         encodeFunctionData({
           abi: moduleAbi,
           functionName: "syncSettlement",
           args: [marketId],
         }),
-        { to: MODULE, gas: 10_000_000n },
+        MODULE,
+        10_000_000n,
+        txs,
       );
-      txs.push({ name: "syncSettlement", hash: sync.transactionHash, status: sync.status });
-    } catch (e) {
-      txs.push({ name: "syncSettlement", hash: "threw", status: (e as Error).message });
+      mid = await getMarketOnchainHttp(client, MODULE, marketId);
     }
   }
 
-  const afterPoke = await getMarketOnchainHttp(client, MODULE, marketId);
+  const afterPoke = mid;
   const outcomeToken = (await client.readContract({
     address: afterPoke.market,
     abi: marketAbi,
     functionName: "outcomeToken",
   })) as Address;
-  const yesBal = await client.readContract({
-    address: outcomeToken,
-    abi: token6909Abi,
-    functionName: "balanceOf",
-    args: [vault, afterPoke.yesId],
-  });
-  const noBal = await client.readContract({
-    address: outcomeToken,
-    abi: token6909Abi,
-    functionName: "balanceOf",
-    args: [vault, afterPoke.noId],
-  });
+  const [yesBal, noBal, moduleApprovedStart] = await Promise.all([
+    client.readContract({
+      address: outcomeToken,
+      abi: token6909Abi,
+      functionName: "balanceOf",
+      args: [vault, afterPoke.yesId],
+    }),
+    client.readContract({
+      address: outcomeToken,
+      abi: token6909Abi,
+      functionName: "balanceOf",
+      args: [vault, afterPoke.noId],
+    }),
+    client.readContract({
+      address: outcomeToken,
+      abi: token6909Abi,
+      functionName: "isOperator",
+      args: [vault, MODULE],
+    }),
+  ]);
 
   let redeemTx: Hex | null = null;
   let syncVaultTx: Hex | null = null;
   let redeemed = false;
+  let needsOutcomeApproval = false;
   const vaultColBefore = await erc20Balance(client, COLLATERAL, vault);
+
+  const base = {
+    chainId: 50312,
+    marketId,
+    vault,
+    statusBefore: before.statusLabel,
+    statusAfter: afterPoke.statusLabel,
+    resolved: afterPoke.isResolved,
+    voided: afterPoke.isVoided,
+    voidPolicy: afterPoke.voidPolicy,
+    payoutNumerators: afterPoke.payoutNumerators.map(String),
+    yesBal: yesBal.toString(),
+    noBal: noBal.toString(),
+    vaultCollateralBefore: vaultColBefore.toString(),
+    pokeAndSyncTxs: txs,
+  };
 
   if (afterPoke.isResolved || afterPoke.isVoided) {
     const sv = await sendHttp(
@@ -102,16 +172,29 @@ export async function settleFilledMarket(
       { to: vault, gas: 10_000_000n },
     );
     syncVaultTx = sv.transactionHash;
-    const appr = await sendHttp(
-      account,
-      encodeFunctionData({
-        abi: vaultAbi,
-        functionName: "approveOutcomeOperator",
-        args: [outcomeToken, true],
-      }),
-      { to: vault, gas: 5_000_000n },
-    );
-    txs.push({ name: "approveOutcomeOperator", hash: appr.transactionHash, status: appr.status });
+    txs.push({ name: "syncResolution", hash: sv.transactionHash, status: sv.status });
+
+    let moduleApproved = moduleApprovedStart;
+    if (!moduleApproved) {
+      await trySend(
+        account,
+        "approveOutcomeOperator",
+        encodeFunctionData({
+          abi: vaultAbi,
+          functionName: "approveOutcomeOperator",
+          args: [outcomeToken, true],
+        }),
+        vault,
+        5_000_000n,
+        txs,
+      );
+      moduleApproved = await client.readContract({
+        address: outcomeToken,
+        abi: token6909Abi,
+        functionName: "isOperator",
+        args: [vault, MODULE],
+      });
+    }
 
     const nums = afterPoke.payoutNumerators;
     let win = 0;
@@ -121,6 +204,25 @@ export async function settleFilledMarket(
     const amount = afterPoke.isVoided ? (win === 0 ? yesBal : noBal) : win === 0 ? yesBal : noBal;
     const voidYes = afterPoke.isVoided ? yesBal : 0n;
     const voidNo = afterPoke.isVoided ? noBal : 0n;
+    const mustRedeem = afterPoke.isVoided ? voidYes > 0n || voidNo > 0n : amount > 0n;
+
+    if (mustRedeem && !moduleApproved) {
+      needsOutcomeApproval = true;
+      const vaultColAfter = await erc20Balance(client, COLLATERAL, vault);
+      const evidence = {
+        ...base,
+        vaultCollateralAfter: vaultColAfter.toString(),
+        syncVaultTx,
+        redeemTx,
+        redeemed: false,
+        needsOutcomeApproval: true,
+        outcome: "unresolved" as const,
+        settled: false,
+        winningOutcome: win,
+      };
+      writeEvidence("shannon-settlement.json", evidence);
+      return evidence;
+    }
 
     async function redeemSide(idx: number, amt: bigint) {
       if (amt === 0n) return;
@@ -135,6 +237,7 @@ export async function settleFilledMarket(
       );
       redeemTx = rcpt.transactionHash;
       redeemed = rcpt.status === "success";
+      txs.push({ name: "redeemPosition", hash: rcpt.transactionHash, status: rcpt.status });
     }
 
     let outcome: "win" | "loss" | "void" | "unresolved" = "unresolved";
@@ -150,26 +253,16 @@ export async function settleFilledMarket(
       ? redeemed || (voidYes === 0n && voidNo === 0n)
       : amount === 0n || redeemed;
     if (amount === 0n && !afterPoke.isVoided) redeemed = false;
+    if (mustRedeem && !redeemed) needsOutcomeApproval = !moduleApproved;
 
     const vaultColAfter = await erc20Balance(client, COLLATERAL, vault);
     const evidence = {
-      chainId: 50312,
-      marketId,
-      vault: vault,
-      statusBefore: before.statusLabel,
-      statusAfter: afterPoke.statusLabel,
-      resolved: afterPoke.isResolved,
-      voided: afterPoke.isVoided,
-      voidPolicy: afterPoke.voidPolicy,
-      payoutNumerators: afterPoke.payoutNumerators.map(String),
-      yesBal: yesBal.toString(),
-      noBal: noBal.toString(),
-      vaultCollateralBefore: vaultColBefore.toString(),
+      ...base,
       vaultCollateralAfter: vaultColAfter.toString(),
-      pokeAndSyncTxs: txs,
       syncVaultTx,
       redeemTx,
       redeemed,
+      needsOutcomeApproval,
       outcome,
       settled,
       winningOutcome: win,
@@ -180,23 +273,12 @@ export async function settleFilledMarket(
 
   const vaultColAfter = await erc20Balance(client, COLLATERAL, vault);
   const evidence = {
-    chainId: 50312,
-    marketId,
-    vault: vault,
-    statusBefore: before.statusLabel,
-    statusAfter: afterPoke.statusLabel,
-    resolved: afterPoke.isResolved,
-    voided: afterPoke.isVoided,
-    voidPolicy: afterPoke.voidPolicy,
-    payoutNumerators: afterPoke.payoutNumerators.map(String),
-    yesBal: yesBal.toString(),
-    noBal: noBal.toString(),
-    vaultCollateralBefore: vaultColBefore.toString(),
+    ...base,
     vaultCollateralAfter: vaultColAfter.toString(),
-    pokeAndSyncTxs: txs,
     syncVaultTx,
     redeemTx,
     redeemed: false,
+    needsOutcomeApproval: false,
     outcome: "unresolved" as const,
     settled: false,
     winningOutcome: null as number | null,
@@ -205,7 +287,11 @@ export async function settleFilledMarket(
   return evidence;
 }
 
-export async function settleFilledMarketFromKey(privateKey: Hex, marketId: Hex) {
+export async function settleFilledMarketFromKey(
+  privateKey: Hex,
+  marketId: Hex,
+  vault?: Address,
+) {
   const { privateKeyToAccount } = await import("viem/accounts");
-  return settleFilledMarket(privateKeyToAccount(privateKey), marketId);
+  return settleFilledMarket(privateKeyToAccount(privateKey), marketId, { vault });
 }

@@ -52,6 +52,7 @@ export function RiskPolicySection() {
   const draft = useRelay((s) => s.draftConfig);
   const setDraft = useRelay((s) => s.setDraftConfig);
   const goScreen = useRelay((s) => s.goScreen);
+  const backendState = useRelay((s) => s.backendState);
 
   const live = runner?.config ?? config;
   const streak = useRelay((s) => s.streak);
@@ -248,8 +249,19 @@ export function RiskPolicySection() {
               CHARGE SHIELDS ON THIS VAULT
             </button>
           ) : null}
+          {isLiveMode() && backendState === "WAITING_SETTLEMENT" ? (
+            <button
+              type="button"
+              onClick={() => useRelay.getState().authorizeRedeem()}
+              className="mlabel mt-3 w-full rounded-xl border-2 border-lined bg-panel2 py-3.5 text-cream transition-colors hover:border-lime hover:text-lime focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime"
+            >
+              AUTHORIZE SETTLEMENT ON THIS VAULT
+            </button>
+          ) : null}
           <p className="data mt-3 text-xs leading-relaxed text-foam">
-            {isLiveMode() && streak.shieldsMax === 0
+            {isLiveMode() && backendState === "WAITING_SETTLEMENT"
+              ? "this vault still needs the owner to grant the markets module as outcome-token operator once. after that, redeem and lap n+1 run unattended."
+              : isLiveMode() && streak.shieldsMax === 0
               ? "bias, budget and cadence stay locked mid-run. shields can be charged on this vault if it has the new bytecode."
               : "changes never apply mid-run — your live runner keeps its deployment config."}
           </p>

@@ -172,6 +172,11 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
         } catch {
           /* indexer optional */
         }
+        const needsApproval = Boolean(settlement.needsOutcomeApproval);
+        await go("WAITING_SETTLEMENT", {
+          lastMarketId: lastOrder.market_id,
+          lastError: needsApproval ? "needs_outcome_approval" : null,
+        });
         await persistWorkerStep({
           runnerId: runner.id,
           vault,
@@ -183,8 +188,15 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
           closePrice,
           oracleQuestionId,
         });
-        log("settlement_pending", { runnerId: runner.id, marketId: lastOrder.market_id });
-        return { action: "settlement_pending", runnerId: runner.id };
+        log("settlement_pending", {
+          runnerId: runner.id,
+          marketId: lastOrder.market_id,
+          needsOutcomeApproval: needsApproval,
+        });
+        return {
+          action: needsApproval ? "needs_outcome_approval" : "settlement_pending",
+          runnerId: runner.id,
+        };
       }
       const chargesBefore = Number(snap.shieldCharges ?? 0);
       const nextState: RunnerState = settlement.voided
@@ -376,6 +388,7 @@ export async function runWorkerLoop(account: LocalAccount, opts: { once?: boolea
         log("tick", out);
         if (out.action === "no_lease" || out.action === "doctor_block") break;
         if (out.action === "filled" || out.action === "placed" || out.action === "no_attempt") break;
+        if (out.action === "needs_outcome_approval") break;
       }
     } catch (e) {
       log("tick_error", { error: (e as Error).message });

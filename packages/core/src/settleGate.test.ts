@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { derivedPnlRaw, filledOrderNeedsSettle, settlementIsFinal } from "./settleGate.js";
+import {
+  derivedPnlRaw,
+  filledOrderNeedsSettle,
+  settlementIsFinal,
+  voidExpiredIsCallable,
+} from "./settleGate.js";
 
 describe("filledOrderNeedsSettle", () => {
   it("is false without a fill", () => {
@@ -48,6 +53,14 @@ describe("filledOrderNeedsSettle", () => {
 describe("settlementIsFinal", () => {
   it("treats voided as final even if resolved is false", () => {
     expect(settlementIsFinal({ resolved: false, voided: true })).toBe(true);
+  });
+});
+
+describe("voidExpiredIsCallable", () => {
+  it("opens at expiry + settlementWindow inclusive", () => {
+    expect(voidExpiredIsCallable(100n, 300n, 399n)).toBe(false);
+    expect(voidExpiredIsCallable(100n, 300n, 400n)).toBe(true);
+    expect(voidExpiredIsCallable(100n, 300n, 401n)).toBe(true);
   });
 });
 

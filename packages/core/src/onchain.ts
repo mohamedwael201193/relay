@@ -50,6 +50,7 @@ export async function getMarketOnchainHttp(
   noId: bigint;
   tradingStart: bigint;
   expiry: bigint;
+  settlementWindow: bigint;
   nonce: bigint;
   status: number;
   statusLabel: string;
@@ -82,21 +83,27 @@ export async function getMarketOnchainHttp(
   if (market === "0x0000000000000000000000000000000000000000") {
     throw new Error("unknown marketId on module");
   }
-  const [status, payoutNumerators, isResolved, isVoided, decimals, voidPolicy] = await Promise.all([
-    client.readContract({ address: market, abi: binaryMarketReadAbi, functionName: "status" }),
-    client.readContract({
-      address: market,
-      abi: binaryMarketReadAbi,
-      functionName: "payoutNumerators",
-    }),
-    client.readContract({ address: market, abi: binaryMarketReadAbi, functionName: "isResolved" }),
-    client.readContract({ address: market, abi: binaryMarketReadAbi, functionName: "isVoided" }),
-    erc20Decimals(client, collateral),
-    client
-      .readContract({ address: market, abi: binaryMarketReadAbi, functionName: "voidPolicy" })
-      .then((v) => Number(v))
-      .catch(() => null),
-  ]);
+  const [status, payoutNumerators, isResolved, isVoided, decimals, voidPolicy, settlementWindow] =
+    await Promise.all([
+      client.readContract({ address: market, abi: binaryMarketReadAbi, functionName: "status" }),
+      client.readContract({
+        address: market,
+        abi: binaryMarketReadAbi,
+        functionName: "payoutNumerators",
+      }),
+      client.readContract({ address: market, abi: binaryMarketReadAbi, functionName: "isResolved" }),
+      client.readContract({ address: market, abi: binaryMarketReadAbi, functionName: "isVoided" }),
+      erc20Decimals(client, collateral),
+      client
+        .readContract({ address: market, abi: binaryMarketReadAbi, functionName: "voidPolicy" })
+        .then((v) => Number(v))
+        .catch(() => null),
+      client.readContract({
+        address: market,
+        abi: binaryMarketReadAbi,
+        functionName: "settlementWindow",
+      }),
+    ]);
   return {
     oracleQuestionId: rec[0],
     collateral,
@@ -107,6 +114,7 @@ export async function getMarketOnchainHttp(
     noId: rec[11],
     tradingStart: rec[12],
     expiry: rec[13],
+    settlementWindow,
     nonce,
     status: Number(status),
     statusLabel: statusName(Number(status)),

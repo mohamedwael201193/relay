@@ -5,4 +5,5 @@ export type LiveHandlers = {
   kill: () => Promise<void>;
   withdraw: () => Promise<void>;
   chargeShields?: () => Promise<void>;
+  authorizeRedeem?: () => Promise<void>;
 };

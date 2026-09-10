@@ -12,6 +12,7 @@ import {
   formatUnits,
   getAddress,
   http,
+  parseAbi,
   parseUnits,
   type Address,
   type Hex,
@@ -591,6 +592,47 @@ export function LiveBridge() {
               abi: vaultWriteAbi,
               functionName: "setShieldsMax",
               args: [n],
+            }),
+          });
+          await refreshRunner(net, owner, vault);
+        } catch (e) {
+          phase("Failed", "failed");
+          reportApiError((e as Error).message);
+        }
+      },
+      authorizeRedeem: async () => {
+        try {
+          const net = await relayApi.network();
+          const { walletClient, publicClient, owner } = await clients(net);
+          const listed = await relayApi.runnersByOwner(owner);
+          const vault = pickOwnedVault(listed.runners, useRelay.getState().vaultAddress);
+          if (!vault || isOpsVault(vault)) return;
+          const live = await relayApi.live(vault).catch(() => null);
+          const marketId = (live && "lastMarketId" in live ? live.lastMarketId : null) as Hex | null;
+          if (!marketId) {
+            reportApiError("no market to authorize");
+            return;
+          }
+          const rec = await publicClient.readContract({
+            address: net.module as Address,
+            abi: parseAbi([
+              "function markets(bytes32 marketId) view returns (uint256,uint8,uint8,address,uint32,bytes32,address,address,address,address,uint256,uint256,uint64,uint64)",
+            ]),
+            functionName: "markets",
+            args: [marketId],
+          });
+          const marketAddr = rec[8] as Address;
+          const outcomeToken = (await publicClient.readContract({
+            address: marketAddr,
+            abi: parseAbi(["function outcomeToken() view returns (address)"]),
+            functionName: "outcomeToken",
+          })) as Address;
+          await send(walletClient, publicClient, {
+            to: vault as Address,
+            data: encodeFunctionData({
+              abi: vaultWriteAbi,
+              functionName: "approveOutcomeOperator",
+              args: [outcomeToken, true],
             }),
           });
           await refreshRunner(net, owner, vault);

@@ -45,6 +45,7 @@ export {
   filledOrderNeedsSettle,
   settlementIsFinal,
   derivedPnlRaw,
+  voidExpiredIsCallable,
 } from "./settleGate.js";
 export {
   classifyFill,
