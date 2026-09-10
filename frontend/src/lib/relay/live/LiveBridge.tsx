@@ -18,13 +18,14 @@ import {
 } from "viem";
 import { eventsUrl, relayApi, type NetworkConfig, type ProofBundle } from "@/lib/relay/api/client";
 import { publicNetwork } from "@/lib/relay/api/normalizeNetwork";
-import { SHANNON_CHAIN_ID } from "@/lib/relay/config/network";
+import { isOpsVault, SHANNON_CHAIN_ID } from "@/lib/relay/config/network";
 import { useRelay } from "@/lib/relay/engine/store";
 import { isLiveMode } from "@/lib/relay/live/mode";
 import { somniaShannon } from "@/lib/relay/live/chain";
 import { ownerMessage, vaultWriteAbi } from "@/lib/relay/live/abi";
 import { registerLiveHandlers } from "@/lib/relay/live/registry";
 import { ownerFromPrivy, pickConnectedWallet } from "@/lib/relay/live/ownerAddress";
+import { pickOwnedVault } from "@/lib/relay/live/pickOwnedVault";
 import {
   arenaFromRows,
   calendarFromMarkets,
@@ -42,6 +43,24 @@ type ConnectedWallet = {
   switchChain: (chainId: number) => Promise<void>;
   getEthereumProvider: () => Promise<EthereumProvider>;
 };
+
+function parseChainId(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const s = String(value ?? "");
+  const hex = s.match(/0x[0-9a-f]+/i)?.[0];
+  if (hex) return Number.parseInt(hex, 16);
+  const dec = s.match(/(\d{4,})/)?.[1];
+  return dec ? Number(dec) : null;
+}
+
+async function assertShannonChain(provider: EthereumProvider, wallet?: ConnectedWallet) {
+  const read = async () => parseChainId(await provider.request({ method: "eth_chainId" }));
+  if ((await read()) === SHANNON_CHAIN_ID) return;
+  await wallet?.switchChain(SHANNON_CHAIN_ID).catch(() => undefined);
+  if ((await read()) !== SHANNON_CHAIN_ID) {
+    throw new Error("Wrong network — switch to Somnia Shannon (chain 50312)");
+  }
+}
 
 function phase(label: string, status: "waiting" | "signing" | "submitting" | "confirming" | "confirmed" | "failed", hash?: string) {
   useRelay.setState({ txPhase: { label, status, hash } });
@@ -100,8 +119,7 @@ async function readWalletBalances(net: NetworkConfig, owner: string) {
 
 async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: string | null) {
   const listed = await relayApi.runnersByOwner(owner);
-  const mine = listed.runners.find((r) => r.state !== "KILLED") ?? listed.runners[0];
-  const vault = (vaultHint ?? mine?.vault ?? useRelay.getState().vaultAddress)?.toLowerCase() ?? null;
+  const vault = pickOwnedVault(listed.runners, vaultHint);
   if (!vault) {
     const arena = await relayApi.arena().catch(() => ({ runners: [] }));
     useRelay.setState({
@@ -115,6 +133,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     });
     return;
   }
+  const mine = listed.runners.find((r) => r.vault.toLowerCase() === vault) ?? listed.runners[0];
   const [live, history, proof, markets, arena] = await Promise.all([
     relayApi.live(vault).catch(() => mine ?? null),
     relayApi.history(vault).catch(() => ({ laps: [] as never[] })),
@@ -206,16 +225,13 @@ export function LiveBridge() {
       if (!wallet && !injected) throw new Error("Connect a wallet first");
       const embedded = wallet?.walletClientType === "privy";
       const wanted = (wallet?.address ?? ctx.current.owner)?.toLowerCase();
-      if (wallet && !embedded && wallet.chainId && !String(wallet.chainId).includes(String(SHANNON_CHAIN_ID))) {
-        await wallet.switchChain(SHANNON_CHAIN_ID).catch(() => undefined);
-      }
       const provider = embedded
         ? await wallet!.getEthereumProvider()
         : (injected ?? (await wallet!.getEthereumProvider()));
+      await assertShannonChain(provider, wallet);
       let account: Address | undefined;
       if (embedded) {
         account = wallet!.address as Address;
-        await wallet!.switchChain(SHANNON_CHAIN_ID).catch(() => undefined);
       } else {
         let accounts = ((await provider.request({ method: "eth_accounts" })) as string[]) ?? [];
         if (wanted && !accounts.some((a) => a.toLowerCase() === wanted)) {
@@ -345,8 +361,9 @@ export function LiveBridge() {
       pause: async () => {
         const net = await relayApi.network();
         const { walletClient, owner } = await clients(net);
-        const vault = useRelay.getState().vaultAddress;
-        if (!vault) return;
+        const listed = await relayApi.runnersByOwner(owner);
+        const vault = pickOwnedVault(listed.runners, useRelay.getState().vaultAddress);
+        if (!vault || isOpsVault(vault)) return;
         const auth = await signAction("pause", vault, owner, walletClient);
         await relayApi.pause(vault, auth);
         await refreshRunner(net, owner, vault);
@@ -354,8 +371,9 @@ export function LiveBridge() {
       resume: async () => {
         const net = await relayApi.network();
         const { walletClient, owner } = await clients(net);
-        const vault = useRelay.getState().vaultAddress;
-        if (!vault) return;
+        const listed = await relayApi.runnersByOwner(owner);
+        const vault = pickOwnedVault(listed.runners, useRelay.getState().vaultAddress);
+        if (!vault || isOpsVault(vault)) return;
         const auth = await signAction("resume", vault, owner, walletClient);
         await relayApi.resume(vault, auth);
         await refreshRunner(net, owner, vault);
@@ -364,8 +382,12 @@ export function LiveBridge() {
         try {
           const net = await relayApi.network();
           const { walletClient, publicClient, owner } = await clients(net);
-          const vault = useRelay.getState().vaultAddress;
+          const listed = await relayApi.runnersByOwner(owner);
+          const vault = pickOwnedVault(listed.runners, useRelay.getState().vaultAddress);
           if (!vault) return;
+          if (isOpsVault(vault)) {
+            throw new Error("Refusing to kill the ops vault from this session");
+          }
           await send(walletClient, publicClient, {
             to: vault as Address,
             data: encodeFunctionData({ abi: vaultWriteAbi, functionName: "kill" }),
@@ -386,9 +408,10 @@ export function LiveBridge() {
         try {
           const net = await relayApi.network();
           const { walletClient, publicClient, owner } = await clients(net);
-          const vault = useRelay.getState().vaultAddress;
+          const listed = await relayApi.runnersByOwner(owner);
+          const vault = pickOwnedVault(listed.runners, useRelay.getState().vaultAddress);
           if (!vault) return;
-          if (net.opsVault && vault.toLowerCase() === net.opsVault.toLowerCase()) {
+          if (isOpsVault(vault)) {
             throw new Error("Refusing to withdraw the ops vault from this session");
           }
           const bal = await publicClient.readContract({
@@ -427,7 +450,10 @@ export function LiveBridge() {
         });
         void net;
       } catch (e) {
-        if (!cancelled) reportApiError((e as Error).message);
+        if (!cancelled) {
+          reportApiError((e as Error).message);
+          useRelay.setState({ arena: [] });
+        }
       }
     }
     void loadPublic();
@@ -451,6 +477,9 @@ export function LiveBridge() {
     let cancelled = false;
     let es: EventSource | null = null;
 
+    const prevOwner = useRelay.getState().wallet.address;
+    const switched = Boolean(prevOwner && prevOwner.toLowerCase() !== owner.toLowerCase());
+
     useRelay.setState((s) => ({
       wallet: {
         ...s.wallet,
@@ -459,12 +488,27 @@ export function LiveBridge() {
         chainId: SHANNON_CHAIN_ID,
         network: "Somnia · Shannon testnet",
       },
+      ...(switched
+        ? {
+            runner: null,
+            vaultAddress: null,
+            backendState: null,
+            liveLap: null,
+            laps: [],
+            bankroll: 0,
+          }
+        : {}),
     }));
 
     (async () => {
       const wallet = pickConnectedWallet(wallets as ConnectedWallet[], owner);
-      if (wallet?.chainId && !String(wallet.chainId).includes(String(SHANNON_CHAIN_ID))) {
-        await wallet.switchChain(SHANNON_CHAIN_ID).catch(() => undefined);
+      if (wallet) {
+        try {
+          const provider = await wallet.getEthereumProvider();
+          await assertShannonChain(provider, wallet);
+        } catch (e) {
+          reportApiError((e as Error).message);
+        }
       }
       let net = publicNetwork();
       try {

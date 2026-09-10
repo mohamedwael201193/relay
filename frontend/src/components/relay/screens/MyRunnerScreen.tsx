@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { selectLivePnl, selectNextStake, selectPnl, useRelay } from "@/lib/relay/engine/store";
+import { isOpsVault } from "@/lib/relay/config/network";
 import type { Lap, LiveLap, Runner, RunnerStatus } from "@/lib/relay/types";
 import {
   cents,
@@ -352,6 +353,7 @@ function ControlsRow({ name, status }: { name: string; status: RunnerStatus }) {
   const pauseRunner = useRelay((s) => s.pauseRunner);
   const resumeRunner = useRelay((s) => s.resumeRunner);
   const stopRunner = useRelay((s) => s.stopRunner);
+  const opsLocked = isOpsVault(useRelay((s) => s.vaultAddress));
   const [killOpen, setKillOpen] = useState(false);
 
   return (
@@ -379,7 +381,8 @@ function ControlsRow({ name, status }: { name: string; status: RunnerStatus }) {
           <AlertDialogTrigger asChild>
             <button
               type="button"
-              className="mlabel rounded-lg border-2 border-ember px-5 py-2.5 text-ember transition-colors hover:bg-ember hover:text-cream focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember"
+              disabled={opsLocked || status === "STOPPED"}
+              className="mlabel rounded-lg border-2 border-ember px-5 py-2.5 text-ember transition-colors hover:bg-ember hover:text-cream focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember disabled:opacity-40"
             >
               KILL RUNNER
             </button>

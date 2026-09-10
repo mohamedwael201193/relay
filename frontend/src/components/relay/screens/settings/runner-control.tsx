@@ -21,6 +21,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { useRelay } from "@/lib/relay/engine/store";
+import { isOpsVault } from "@/lib/relay/config/network";
 import type { RunnerStatus } from "@/lib/relay/types";
 import { duration, money } from "@/lib/relay/format";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,7 @@ export function RunnerControlSection() {
   const stopRunner = useRelay((s) => s.stopRunner);
   const withdraw = useRelay((s) => s.withdraw);
   const goScreen = useRelay((s) => s.goScreen);
+  const opsLocked = isOpsVault(useRelay((s) => s.vaultAddress));
 
   const [killOpen, setKillOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -90,19 +92,19 @@ export function RunnerControlSection() {
 
             <div className="mt-4 flex flex-wrap gap-2.5">
               {runner.status === "RUNNING" && (
-                <CtlButton tone="flame" onClick={pauseRunner}>
+                <CtlButton tone="flame" disabled={opsLocked} onClick={pauseRunner}>
                   PAUSE RUNNER
                 </CtlButton>
               )}
               {runner.status === "PAUSED" && (
-                <CtlButton tone="lime" onClick={resumeRunner}>
+                <CtlButton tone="lime" disabled={opsLocked} onClick={resumeRunner}>
                   RESUME RUNNER
                 </CtlButton>
               )}
 
               <CtlButton
                 tone="ember"
-                disabled={runner.status === "STOPPED"}
+                disabled={runner.status === "STOPPED" || opsLocked}
                 onClick={() => setKillOpen(true)}
               >
                 KILL RUNNER
@@ -113,7 +115,7 @@ export function RunnerControlSection() {
                   <span className="inline-flex rounded-xl">
                     <CtlButton
                       tone="limeOutline"
-                      disabled={bankroll <= 0}
+                      disabled={bankroll <= 0 || opsLocked}
                       onClick={() => setWithdrawOpen(true)}
                     >
                       WITHDRAW {money(bankroll)}

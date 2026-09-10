@@ -17,6 +17,10 @@ export const SHANNON_PUBLIC = {
   mainnetTradingEnabled: false,
 } as const;
 
+export function isOpsVault(vault: string | null | undefined): boolean {
+  return Boolean(vault && vault.toLowerCase() === SHANNON_PUBLIC.opsVault.toLowerCase());
+}
+
 export const DEFAULT_DRAFT = {
   bias: "FOLLOW" as const,
   budget: 100,
