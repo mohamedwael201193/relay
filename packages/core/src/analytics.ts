@@ -191,8 +191,8 @@ export function aggregateArena(rows: ArenaAggInput[]): ArenaAggRow[] {
       open: stats.open,
       decided: stats.decided,
       win_rate: stats.winRate,
-      pnl_raw: hasPnl ? pnl.toString() : "0",
-      pnl_7d_raw: hasPnl ? pnl7d.toString() : "0",
+      pnl_raw: hasPnl ? pnl.toString() : "",
+      pnl_7d_raw: hasPnl ? pnl7d.toString() : "",
       streak: streak.current,
       best_streak: streak.best,
     });
