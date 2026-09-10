@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetFromMarket, lapsFromHistory, notificationsFromLaps, sideFromKind, streakFromHistory } from "./apply";
+import { assetFromMarket, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromLaps, sideFromKind, streakFromHistory } from "./apply";
 import type { HistoryLap, LiveMarketRow, ProofBundle } from "../api/client";
 import type { Lap } from "../types";
 
@@ -233,5 +233,58 @@ describe("notificationsFromLaps", () => {
   it("does not re-notify an already settled outcome", () => {
     const win = tapeLap({ number: 1, outcome: "WIN", pnl: 0.4, streakAfter: 1 });
     expect(notificationsFromLaps([win], [win])).toEqual([]);
+  });
+});
+
+describe("live feed fallback", () => {
+  it("keeps ETH live USD when the filled window has left the live board", () => {
+    const markets: LiveMarketRow[] = [
+      {
+        marketId: "0xother",
+        asset: "ETH",
+        intervalSec: "60",
+        onchainStatus: "Trading",
+        pool: "0x1",
+        livePrice: 2439.615,
+        priceHistory: [
+          { t: 1, p: 2438 },
+          { t: 2, p: 2439.615 },
+        ],
+      },
+    ];
+    expect(liveFeedPrice(markets, "ETH")).toBe(2439.615);
+    const lap = liveLapFromState({
+      row: {
+        id: "r",
+        vault: "0xabc",
+        owner: "0x1",
+        operator: "0x1",
+        state: "WAITING_SETTLEMENT",
+        chain_id: 50312,
+        last_error: null,
+        last_market_id: "0xexpired",
+        lap_index: 1,
+      },
+      markets,
+      proof: { orders: [], settlements: [], records: [] },
+      now: Date.now(),
+      history: [
+        {
+          id: "1",
+          lap_index: 1,
+          market_id: "0xexpired",
+          pool: null,
+          state: "FILLED",
+          correlation_id: null,
+          created_at: "",
+          asset: "ETH",
+          interval_sec: "60",
+          open_price: "2438.89",
+        },
+      ],
+    });
+    expect(lap?.market.asset).toBe("ETH");
+    expect(lap?.market.openPrice).toBe(2438.89);
+    expect(lap?.price).toBe(2439.615);
   });
 });

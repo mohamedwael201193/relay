@@ -30,6 +30,7 @@ import {
   arenaFromRows,
   calendarFromMarkets,
   lapsFromHistory,
+  liveFeedHistory,
   liveLapFromState,
   notificationsFromLaps,
   runnerFromRow,
@@ -204,16 +205,25 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
       prev.lastResult.lap !== builtResult!.lap ||
       prev.lastResult.outcome !== builtResult!.outcome);
   const lapNotes = isNewResult ? notificationsFromLaps(prev.laps, mappedLaps) : [];
+  const liveLap = liveLapFromState({
+    row,
+    markets: marketsRows,
+    proof: proofBundle,
+    now,
+    history: historyLaps,
+  });
   const lastId = (row.last_market_id ?? "").toLowerCase();
-  const histRow =
-    marketsRows.find((m) => m.marketId.toLowerCase() === lastId) ?? marketsRows[0];
-  const priceHistory = (histRow?.priceHistory ?? []).filter((p) => Number.isFinite(p.p) && p.p > 0);
+  const histRow = marketsRows.find((m) => m.marketId.toLowerCase() === lastId);
+  const priceHistory = (
+    histRow?.priceHistory?.filter((p) => Number.isFinite(p.p) && p.p > 0) ??
+    (liveLap ? liveFeedHistory(marketsRows, liveLap.market.asset) : [])
+  );
   useRelay.setState({
     vaultAddress: vault,
     backendState: row.state,
     apiError: null,
     runner: runnerFromRow(row, useRelay.getState().runner?.name ?? "Runner", cfg),
-    liveLap: liveLapFromState({ row, markets: marketsRows, proof: proofBundle, now }),
+    liveLap,
     calendar: calendarFromMarkets(marketsRows, now),
     laps: mappedLaps,
     arena: arenaFromRows(arena.runners ?? [], vault),

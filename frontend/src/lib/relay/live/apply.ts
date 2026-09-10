@@ -149,6 +149,27 @@ function windowFromMarketRow(r: LiveMarketRow, now: number): MarketWindow {
   };
 }
 
+/** BTC/ETH feed is shared across windows. Never copy another market's opening print. */
+export function liveFeedPrice(markets: LiveMarketRow[], asset: string): number {
+  const want = asset.toUpperCase();
+  for (const m of markets) {
+    if ((m.asset ?? "").toUpperCase() !== want) continue;
+    const p = Number(m.livePrice);
+    if (Number.isFinite(p) && p > 0) return p;
+  }
+  return 0;
+}
+
+export function liveFeedHistory(markets: LiveMarketRow[], asset: string): { t: number; p: number }[] {
+  const want = asset.toUpperCase();
+  for (const m of markets) {
+    if ((m.asset ?? "").toUpperCase() !== want) continue;
+    const hist = (m.priceHistory ?? []).filter((p) => Number.isFinite(p.p) && p.p > 0);
+    if (hist.length > 1) return hist;
+  }
+  return [];
+}
+
 export function calendarFromMarkets(rows: LiveMarketRow[], now: number): MarketWindow[] {
   return rows
     .filter((r) => r.onchainStatus === "Trading" || r.onchainStatus === "Locked")
@@ -161,15 +182,36 @@ export function liveLapFromState(opts: {
   markets: LiveMarketRow[];
   proof: ProofBundle | null;
   now: number;
+  history?: HistoryLap[];
 }): LiveLap | null {
   const mapped = mapBackendState(opts.row.state);
   if (!mapped.phase) return null;
   const cal = calendarFromMarkets(opts.markets, opts.now);
   const lastId = (opts.row.last_market_id ?? "").toLowerCase();
   const raw = opts.markets.find((m) => m.marketId.toLowerCase() === lastId);
+  const hist =
+    opts.history?.find((h) => h.market_id.toLowerCase() === lastId) ??
+    opts.history?.at(-1);
+  const holdingAsset = assetFromMarket(lastId, hist ?? raw ?? {}, opts.markets);
+  const histOpen = Number(hist?.open_price);
+  const holdingWindow: MarketWindow | null = lastId
+    ? {
+        id: lastId,
+        marketId: lastId,
+        asset: holdingAsset,
+        label: `${holdingAsset} Up or Down`,
+        cadence: cadenceFromInterval(hist?.interval_sec ?? raw?.intervalSec ?? null),
+        openPrice: Number.isFinite(histOpen) && histOpen > 0 ? histOpen : 0,
+        opensAt: opts.now,
+        closesAt: raw?.expiry ? Number(raw.expiry) * 1000 : opts.now,
+        venue: "DreamDEX · Event Contracts",
+        collateral: "tUSDC" as const,
+        live: false,
+      }
+    : null;
   const market =
     cal.find((m) => m.marketId.toLowerCase() === lastId) ??
-    (raw ? windowFromMarketRow(raw, opts.now) : cal[0]);
+    (raw ? windowFromMarketRow(raw, opts.now) : holdingWindow ?? cal[0]);
   if (!market) {
     return null;
   }
@@ -186,10 +228,11 @@ export function liveLapFromState(opts: {
   const elapsed = Math.max(0, Math.min(windowTotal, opts.now - market.opensAt));
   const fillYes = lastOrder?.price ? Number(lastOrder.price) / 1e6 : 0;
   const qty = lastOrder?.quantity ? Number(lastOrder.quantity) / 1e6 : 0;
-  const liveUnderlying =
+  const fromRow =
     raw && Number.isFinite(Number(raw.livePrice)) && Number(raw.livePrice) > 0
       ? Number(raw.livePrice)
       : 0;
+  const liveUnderlying = fromRow > 0 ? fromRow : liveFeedPrice(opts.markets, market.asset);
   return {
     number: opts.row.lap_index || 1,
     market,
