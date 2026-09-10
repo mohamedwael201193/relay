@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetFromMarket, bookSnapshotFromLive, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromLaps, sideFromKind, streakFromHistory } from "./apply";
+import { assetFromMarket, bookSnapshotFromLive, impliedStartBankroll, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromLaps, sideFromKind, streakFromHistory } from "./apply";
 import type { HistoryLap, LiveMarketRow, ProofBundle } from "../api/client";
 import type { Lap } from "../types";
 
@@ -94,7 +94,7 @@ describe("lapsFromHistory", () => {
     expect(laps[0].side).toBe("UP");
     expect(laps[0].outcome).toBe("OPEN");
     expect(laps[0].market.cadence).toBe("1m");
-    expect(laps[0].pnl).toBe(0);
+    expect(Number.isNaN(laps[0].pnl)).toBe(true);
   });
 
   it("uses persisted pnl on settled laps and keeps OPEN out of win rate inputs", () => {
@@ -226,7 +226,7 @@ describe("lapsFromHistory", () => {
     expect(laps[0].outcome).toBe("OPEN");
     expect(laps[0].entryPrice).toBeCloseTo(0.743);
     expect(laps[0].stake).toBeCloseTo(1.50829);
-    expect(laps[0].pnl).toBe(0);
+    expect(Number.isNaN(laps[0].pnl)).toBe(true);
   });
 });
 
@@ -238,6 +238,18 @@ describe("streakFromHistory redeemed wins", () => {
         { id: "2", lap_index: 2, market_id: "0x2", pool: null, state: "WAITING_SETTLEMENT", correlation_id: null, created_at: "" },
       ]),
     ).toEqual({ current: 1, best: 1 });
+  });
+});
+
+describe("impliedStartBankroll", () => {
+  it("reconstructs start from vault cash, realized tape, and open escrow", () => {
+    const start = impliedStartBankroll(21.07, [
+      tapeLap({ number: 1, outcome: "WIN", pnl: 0.15, stake: 1.5 }),
+      tapeLap({ number: 2, outcome: "LOSS", pnl: -1.51, stake: 1.51 }),
+      tapeLap({ number: 3, outcome: "LOSS", pnl: -1.43, stake: 1.43 }),
+      tapeLap({ number: 4, outcome: "OPEN", pnl: Number.NaN, stake: 1.35 }),
+    ]);
+    expect(start).toBeCloseTo(21.07 - (0.15 - 1.51 - 1.43) + 1.35, 2);
   });
 });
 

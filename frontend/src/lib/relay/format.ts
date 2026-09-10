@@ -3,6 +3,9 @@
 export function money(v: number, opts?: { sign?: boolean; decimals?: number }) {
   if (!Number.isFinite(v)) return "—";
   const abs0 = Math.abs(v);
+  if (abs0 < 5e-7) {
+    return opts?.sign ? "+$0.00" : "$0.00";
+  }
   const d =
     opts?.decimals ??
     (abs0 > 0 && abs0 < 0.0001 ? 8 : abs0 > 0 && abs0 < 0.01 ? 6 : 2);

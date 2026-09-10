@@ -47,17 +47,17 @@ export function AnalyticsScreen() {
     ];
     let b = startBankroll;
     for (const l of asc) {
-      b = b + l.pnl;
+      if (l.outcome !== "OPEN" && Number.isFinite(l.pnl)) b = b + l.pnl;
       pts.push({
         lap: l.number,
-        bankroll: b,
+        bankroll: l.outcome === "OPEN" ? bankroll : b,
         pnl: l.pnl,
         outcome: l.outcome,
         shielded: l.shielded,
       });
     }
     return pts;
-  }, [asc, startBankroll]);
+  }, [asc, startBankroll, bankroll]);
 
   const nowPoint = liveLap ? { lap: liveLap.number, bankroll } : null;
 
@@ -67,7 +67,7 @@ export function AnalyticsScreen() {
         const ls = asc.filter((l) => l.market.asset === asset);
         const wins = ls.filter((l) => l.outcome === "WIN").length;
         const losses = ls.filter((l) => l.outcome === "LOSS").length;
-        const pnl = ls.reduce((s, l) => s + l.pnl, 0);
+        const pnl = ls.filter((l) => Number.isFinite(l.pnl)).reduce((s, l) => s + l.pnl, 0);
         const decided = wins + losses;
         return {
           asset,
@@ -99,7 +99,7 @@ export function AnalyticsScreen() {
       peak = Math.max(peak, p.bankroll);
       maxDD = Math.max(maxDD, peak - p.bankroll);
     }
-    const closedPnls = asc.filter((l) => l.outcome !== "OPEN").map((l) => l.pnl);
+    const closedPnls = asc.filter((l) => l.outcome !== "OPEN" && Number.isFinite(l.pnl)).map((l) => l.pnl);
     const mean = closedPnls.length ? closedPnls.reduce((s, p) => s + p, 0) / closedPnls.length : 0;
     const variance =
       closedPnls.length > 1
@@ -134,7 +134,7 @@ export function AnalyticsScreen() {
         label: `${String(9 + b).padStart(2, "0")}:00`,
         laps: inb.length,
         wins,
-        pnl: +inb.reduce((s, l) => s + l.pnl, 0).toFixed(2),
+        pnl: +inb.filter((l) => Number.isFinite(l.pnl)).reduce((s, l) => s + l.pnl, 0).toFixed(2),
         winRate: inb.length ? wins / inb.length : 0,
       };
     });

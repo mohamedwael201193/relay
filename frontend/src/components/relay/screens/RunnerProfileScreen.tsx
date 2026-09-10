@@ -434,7 +434,7 @@ function TapeRowItem({
         animate={{ opacity: 1 }}
         className={cn("data ml-auto text-sm font-semibold", pnlTone)}
       >
-        {r.pnl === 0 ? money(0) : signed(r.pnl)}
+        {Number.isFinite(r.pnl) ? (r.pnl === 0 ? money(0) : signed(r.pnl)) : "—"}
       </motion.span>
       <span className="data w-16 shrink-0 text-right text-[10px] text-foam/70">
         {ago(r.at, now)}

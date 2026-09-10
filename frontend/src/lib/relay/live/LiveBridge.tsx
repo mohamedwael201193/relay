@@ -27,9 +27,11 @@ import { ownerMessage, vaultWriteAbi } from "@/lib/relay/live/abi";
 import { registerLiveHandlers } from "@/lib/relay/live/registry";
 import { ownerFromPrivy, pickConnectedWallet } from "@/lib/relay/live/ownerAddress";
 import { pickOwnedVault, selectDeployVault } from "@/lib/relay/live/pickOwnedVault";
+import { ownerBoundReset } from "@/lib/relay/live/ownerSession";
 import {
   arenaFromRows,
   calendarFromMarkets,
+  impliedStartBankroll,
   lapsFromHistory,
   liveFeedHistory,
   liveLapFromState,
@@ -128,12 +130,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
   if (!vault) {
     const arena = await relayApi.arena().catch(() => ({ runners: [] }));
     useRelay.setState({
-      runner: null,
-      vaultAddress: null,
-      backendState: null,
-      liveLap: null,
-      laps: [],
-      bankroll: 0,
+      ...ownerBoundReset(),
       arena: arenaFromRows(arena.runners ?? [], null),
     });
     return;
@@ -235,7 +232,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     laps: mappedLaps,
     arena: arenaFromRows(arena.runners ?? [], vault),
     bankroll: vaultBal,
-    startBankroll: useRelay.getState().startBankroll > 0 ? useRelay.getState().startBankroll : vaultBal,
+    startBankroll: impliedStartBankroll(vaultBal, mappedLaps),
     peakBankroll: Math.max(useRelay.getState().peakBankroll, vaultBal),
     streak: {
       current: streak.current,
@@ -698,16 +695,7 @@ export function LiveBridge() {
         chainId: SHANNON_CHAIN_ID,
         network: "Somnia · Shannon testnet",
       },
-      ...(switched
-        ? {
-            runner: null,
-            vaultAddress: null,
-            backendState: null,
-            liveLap: null,
-            laps: [],
-            bankroll: 0,
-          }
-        : {}),
+      ...(switched ? ownerBoundReset() : {}),
     }));
 
     (async () => {
@@ -782,10 +770,8 @@ export function LiveBridge() {
     if (!isLiveMode() || !ready || !walletsReady) return;
     if (authenticated) return;
     useRelay.setState((s) => ({
+      ...ownerBoundReset(),
       wallet: { ...s.wallet, connected: false, address: "", tUSDC: 0, nativeSTT: 0 },
-      runner: null,
-      vaultAddress: null,
-      liveLap: null,
     }));
   }, [ready, authenticated, walletsReady]);
 

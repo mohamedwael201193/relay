@@ -406,7 +406,7 @@ export function lapsFromHistory(
         : collateralFromYes(yes, filledQty || qty, side);
     const pnl =
       outcome === "OPEN"
-        ? 0
+        ? Number.NaN
         : h.pnl != null && h.pnl !== ""
           ? Number(h.pnl) / 1e6
           : Number.NaN;
@@ -494,6 +494,18 @@ export function lapsFromHistory(
     }
   }
   return built;
+}
+
+/** Vault cash + open escrow − realized tape = the bankroll this runner started with. */
+export function impliedStartBankroll(vaultBal: number, laps: Lap[]): number {
+  const realized = laps
+    .filter((l) => l.outcome !== "OPEN" && Number.isFinite(l.pnl))
+    .reduce((a, l) => a + l.pnl, 0);
+  const openStake = laps
+    .filter((l) => l.outcome === "OPEN" && Number.isFinite(l.stake) && l.stake > 0)
+    .reduce((a, l) => a + l.stake, 0);
+  const start = vaultBal - realized + openStake;
+  return Number.isFinite(start) && start > 0 ? start : vaultBal;
 }
 
 /** New settled laps since `prev`. OPEN fills are not results. Does not invent lastResult. */

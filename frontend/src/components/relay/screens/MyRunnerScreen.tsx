@@ -567,6 +567,7 @@ function BankrollPanel() {
     const vals: number[] = [startBankroll];
     let b = startBankroll;
     for (const l of laps) {
+      if (l.outcome === "OPEN" || !Number.isFinite(l.pnl)) continue;
       b = +(b + l.pnl).toFixed(2);
       vals.push(b);
     }
