@@ -3,16 +3,14 @@ import { decodeEventLog, parseAbi, type Address, type Hex, type Log } from "viem
 import { privateKeyToAccount, type LocalAccount } from "viem/accounts";
 import { ORDER_KIND, ORDER_TYPE, orderBookEventsAbi } from "@somnia-chain/markets-sdk";
 import { SHANNON_ADDRESSES, requiredAddress } from "./addresses.js";
-import { binaryPoolReadAbi } from "./abis.js";
-import { createExchange } from "./exchange.js";
-import { getBinaryBookParamsHttp, getMarketOnchainHttp } from "./onchain.js";
 import { classifyFill, snapDown, snapQuantity } from "./quant.js";
 import { shannonHttpClient } from "./sendHttp.js";
 import { sendHttp } from "./sendHttp.js";
 import { loadShannonDeployment, writeEvidence } from "./vaultOps.js";
 import { erc20Balance } from "./rpc.js";
+import { discoverLiveMarket } from "./discover.js";
+import { assertShannonExecution } from "./gates.js";
 
-const MODULE = requiredAddress(SHANNON_ADDRESSES.binaryModule, "binaryModule");
 const COLLATERAL = requiredAddress(SHANNON_ADDRESSES.collateral, "collateral");
 
 const vaultWriteAbi = parseAbi([
@@ -85,66 +83,40 @@ function vaultRejectReason(logs: Log[]): string | null {
   return null;
 }
 
-export async function runLiveOrder(account: LocalAccount): Promise<{
-  postOnly: AttemptResult;
+export async function runLiveOrder(
+  account: LocalAccount,
+  opts: {
+    intervalSec?: string;
+    iocOnly?: boolean;
+    evidenceName?: string;
+    skipMarketIds?: string[];
+    waitMs?: number;
+    maxExpiryHorizonSec?: number;
+  } = {},
+): Promise<{
+  postOnly: AttemptResult | null;
   ioc: AttemptResult | null;
+  asset?: string;
+  intervalSec?: string;
 }> {
+  assertShannonExecution();
   const dep = loadShannonDeployment();
   const client = shannonHttpClient();
-  const exchange = createExchange("shannon");
   const correlationRoot = randomUUID();
-  const live = await exchange.client.listLiveBinaryMarkets({ limit: 25 });
-
-  let chosen: {
-    marketId: Hex;
-    pool: Address;
-    book: { tickSize: bigint; lotSize: bigint; minQuantity: bigint };
-    bestBid: bigint | null;
-    bestAsk: bigint | null;
-    expireNs: bigint;
-    nonce: bigint;
-    decimals: number;
-  } | null = null;
-
-  for (const m of live) {
-    if (!m.marketId || !m.poolAddress) continue;
-    const onchain = await getMarketOnchainHttp(client, MODULE, m.marketId as Hex);
-    if (onchain.statusLabel !== "Trading") continue;
-    if (onchain.collateral.toLowerCase() !== COLLATERAL.toLowerCase()) continue;
-    if (onchain.pool === "0x0000000000000000000000000000000000000000") continue;
-    const book = await getBinaryBookParamsHttp(client, onchain.pool);
-    let expireNs = 0n;
-    try {
-      expireNs = await client.readContract({
-        address: onchain.pool,
-        abi: binaryPoolReadAbi,
-        functionName: "marketExpiryNs",
-      });
-    } catch {
-      continue;
-    }
-    if (expireNs === 0n) continue;
-    let bestBid: bigint | null = null;
-    let bestAsk: bigint | null = null;
-    try {
-      const ob = await exchange.client.getBinaryOrderBook(m.poolAddress);
-      bestBid = ob.yesBids?.[0]?.price != null ? BigInt(ob.yesBids[0].price) : null;
-      bestAsk = ob.yesAsks?.[0]?.price != null ? BigInt(ob.yesAsks[0].price) : null;
-    } catch {
-      continue;
-    }
-    if (bestBid == null && bestAsk == null) continue;
-    chosen = {
-      marketId: m.marketId as Hex,
-      pool: onchain.pool,
-      book,
-      bestBid,
-      bestAsk,
-      expireNs,
-      nonce: onchain.nonce,
-      decimals: onchain.decimals,
-    };
-    break;
+  let chosen = await discoverLiveMarket({
+    intervalSec: opts.intervalSec,
+    requireAsks: Boolean(opts.iocOnly),
+    skipMarketIds: opts.skipMarketIds,
+    waitMs: opts.waitMs ?? 90_000,
+    maxExpiryHorizonSec: opts.maxExpiryHorizonSec,
+  });
+  if (!chosen && opts.intervalSec) {
+    chosen = await discoverLiveMarket({
+      requireAsks: Boolean(opts.iocOnly),
+      skipMarketIds: opts.skipMarketIds,
+      waitMs: 20_000,
+      maxExpiryHorizonSec: opts.maxExpiryHorizonSec ?? 320,
+    });
   }
 
   if (!chosen) {
@@ -153,20 +125,25 @@ export async function runLiveOrder(account: LocalAccount): Promise<{
 
   const qty = snapQuantity(chosen.book.minQuantity, chosen.book.lotSize, chosen.book.minQuantity);
   const tick = chosen.book.tickSize;
-  let postPrice = chosen.bestBid ?? (chosen.bestAsk != null ? chosen.bestAsk - tick : 0n);
-  postPrice = snapDown(postPrice, tick);
-  if (postPrice < tick) postPrice = tick;
-  if (chosen.bestAsk != null && postPrice >= chosen.bestAsk) {
-    postPrice = snapDown(chosen.bestAsk - tick, tick);
-  }
-  if (postPrice < tick) {
-    throw new Error("POST_ONLY price collapsed below tick (empty/locked book)");
-  }
-
   const vaultBal = await erc20Balance(client, COLLATERAL, dep.vault);
   const unit = 10n ** BigInt(chosen.decimals);
-  const postCost = (postPrice * qty + unit - 1n) / unit;
-  if (postCost > vaultBal) throw new Error("vault collateral below POST_ONLY escrow");
+
+  let postPrice = 0n;
+  if (!opts.iocOnly) {
+    postPrice = chosen.bestBid ?? (chosen.bestAsk != null ? chosen.bestAsk - tick : 0n);
+    postPrice = snapDown(postPrice, tick);
+    if (postPrice < tick) postPrice = tick;
+    if (chosen.bestAsk != null && postPrice >= chosen.bestAsk) {
+      postPrice = snapDown(chosen.bestAsk - tick, tick);
+    }
+    if (postPrice < tick) {
+      throw new Error("POST_ONLY price collapsed below tick (empty/locked book)");
+    }
+    const postCost = (postPrice * qty + unit - 1n) / unit;
+    if (postCost > vaultBal) throw new Error("vault collateral below POST_ONLY escrow");
+  } else if (chosen.bestAsk == null) {
+    throw new Error("IOC requested but yesAsks empty");
+  }
 
   const { encodeFunctionData } = await import("viem");
 
@@ -222,19 +199,24 @@ export async function runLiveOrder(account: LocalAccount): Promise<{
     };
   }
 
-  const postOnly = await attempt({ label: "POST_ONLY", price: postPrice, orderType: ORDER_TYPE.POST_ONLY });
+  const postOnly = opts.iocOnly
+    ? null
+    : await attempt({ label: "POST_ONLY", price: postPrice, orderType: ORDER_TYPE.POST_ONLY });
 
   let ioc: AttemptResult | null = null;
-  if (postOnly.fillClass !== "FILL" && postOnly.fillClass !== "PARTIAL_FILL" && chosen.bestAsk != null) {
-    if (postOnly.placedEvent && postOnly.orderId) {
+  const needIoc =
+    opts.iocOnly ||
+    (postOnly != null && postOnly.fillClass !== "FILL" && postOnly.fillClass !== "PARTIAL_FILL" && chosen.bestAsk != null);
+  if (needIoc && chosen.bestAsk != null) {
+    if (postOnly?.placedEvent && postOnly.orderId) {
       const cancelRcpt = await sendHttp(
         account,
         encodeFunctionData({ abi: vaultWriteAbi, functionName: "cancelLast" }),
         { to: dep.vault, gas: 10_000_000n },
       );
       if (cancelRcpt.status !== "success") {
-        writeEvidence("shannon-order.json", { postOnly, ioc: null, cancelFailed: cancelRcpt.transactionHash });
-        return { postOnly, ioc: null };
+        writeEvidence(opts.evidenceName ?? "shannon-order.json", { postOnly, ioc: null, cancelFailed: cancelRcpt.transactionHash });
+        return { postOnly, ioc: null, asset: chosen.asset, intervalSec: chosen.intervalSec };
       }
     }
     const iocPrice = snapDown(chosen.bestAsk, tick);
@@ -244,10 +226,12 @@ export async function runLiveOrder(account: LocalAccount): Promise<{
     }
   }
 
-  writeEvidence("shannon-order.json", {
+  writeEvidence(opts.evidenceName ?? "shannon-order.json", {
     chainId: 50312,
     vault: dep.vault,
     correlationRoot,
+    asset: chosen.asset,
+    intervalSec: chosen.intervalSec,
     book: {
       tick: chosen.book.tickSize.toString(),
       lot: chosen.book.lotSize.toString(),
@@ -259,7 +243,7 @@ export async function runLiveOrder(account: LocalAccount): Promise<{
     ioc,
     note: "fillClass is from OrderFilled logs, never from receipt.status",
   });
-  return { postOnly, ioc };
+  return { postOnly, ioc, asset: chosen.asset, intervalSec: chosen.intervalSec };
 }
 
 export async function runLiveOrderFromKey(privateKey: Hex) {

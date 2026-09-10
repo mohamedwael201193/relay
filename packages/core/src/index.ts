@@ -18,6 +18,10 @@ export {
   runVaultFunding,
 } from "./vaultOps.js";
 export { runLiveOrder, runLiveOrderFromKey } from "./execute.js";
+export { discoverLiveMarket, normalizeExpireNs, intervalMatches } from "./discover.js";
+export { assertShannonExecution, mainnetTradingEnabled, protocolChecksFailed } from "./gates.js";
+export { runReactivityProbe } from "./reactivityProbe.js";
+export { runGoldE2e } from "./goldE2e.js";
 export { settleFilledMarket, settleFilledMarketFromKey } from "./settle.js";
 export { classifyFill, snapQuantity } from "./quant.js";
-export { canTransition, assertTransition, type RunnerState } from "./state.js";
+export { canTransition, assertTransition, RUNNER_STATES, type RunnerState } from "./state.js";

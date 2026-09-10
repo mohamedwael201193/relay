@@ -8,16 +8,18 @@ if (!key) {
 }
 const out = await runLiveOrderFromKey(key);
 console.log(JSON.stringify({
-  postOnly: {
-    correlationId: out.postOnly.correlationId,
-    marketId: out.postOnly.marketId,
-    placeTx: out.postOnly.placeTx,
-    fillClass: out.postOnly.fillClass,
-    filled: out.postOnly.filled,
-    placedEvent: out.postOnly.placedEvent,
-    vaultReason: out.postOnly.vaultReason,
-    receiptStatus: out.postOnly.placeStatus,
-  },
+  postOnly: out.postOnly
+    ? {
+        correlationId: out.postOnly.correlationId,
+        marketId: out.postOnly.marketId,
+        placeTx: out.postOnly.placeTx,
+        fillClass: out.postOnly.fillClass,
+        filled: out.postOnly.filled,
+        placedEvent: out.postOnly.placedEvent,
+        vaultReason: out.postOnly.vaultReason,
+        receiptStatus: out.postOnly.placeStatus,
+      }
+    : null,
   ioc: out.ioc
     ? {
         correlationId: out.ioc.correlationId,

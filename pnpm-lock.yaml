@@ -20,6 +20,9 @@ importers:
       '@somnia-chain/reactivity-contracts':
         specifier: 0.2.1
         version: 0.2.1
+      tsx:
+        specifier: ^4.20.5
+        version: 4.23.13
     devDependencies:
       '@types/node':
         specifier: ^24.3.0
@@ -27,9 +30,6 @@ importers:
       '@types/pg':
         specifier: ^8.15.5
         version: 8.23.1
-      tsx:
-        specifier: ^4.20.5
-        version: 4.23.13
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -45,6 +45,18 @@ importers:
       '@relay/db':
         specifier: workspace:*
         version: link:../../packages/db
+
+  apps/worker:
+    dependencies:
+      '@relay/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@relay/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      viem:
+        specifier: ^2.37.5
+        version: 2.56.3(typescript@5.9.3)
 
   packages/core:
     dependencies:

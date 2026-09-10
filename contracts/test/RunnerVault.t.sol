@@ -201,4 +201,26 @@ contract RunnerVaultTest is Test {
         vm.expectRevert(abi.encodeWithSelector(RunnerVault.UnsupportedKind.selector, 1));
         vault.arm(MARKET, 1, 500_000, 1_000_000, uint64((block.timestamp + 3600) * 1e9), 3);
     }
+
+    function test_onEvent_does_not_place_next_order() public {
+        _arm(0, 500_000, 1_000_000);
+        vm.prank(operator);
+        vault.placeArmed();
+        uint256 before = pool.calls();
+        vm.prank(PRECOMPILE);
+        vault.onEvent(HUB, _topics(42, MARKET), _up());
+        assertEq(pool.calls(), before);
+    }
+
+    function test_kill_clears_operator() public {
+        vault.kill();
+        assertEq(vault.operator(), address(0));
+        assertTrue(vault.killed());
+    }
+
+    function test_buy_no_arm() public {
+        vm.prank(operator);
+        vault.arm(MARKET, 2, 250_000, 1_000_000, uint64((block.timestamp + 3600) * 1e9), 3);
+        assertEq(vault.collateralCost(2, 250_000, 1_000_000), 750_000);
+    }
 }

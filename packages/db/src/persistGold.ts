@@ -1,11 +1,26 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { withPool } from "./index.js";
+import { persistWorkerStep, ensureRunner } from "./lease.js";
+import { withPool } from "./pool.js";
+
+type OrderAttempt = {
+  correlationId: string;
+  marketId: string;
+  placeTx: string;
+  fillClass: string;
+  filled: string;
+  orderType: number;
+  price: string;
+  quantity: string;
+  placeStatus: string;
+  orderId: string | null;
+  pool?: string;
+};
 
 type OrderEvidence = {
   vault: string;
-  postOnly: { correlationId: string; marketId: string; placeTx: string; fillClass: string; filled: string; orderType: number; price: string; quantity: string; placeStatus: string; orderId: string | null };
-  ioc: { correlationId: string; placeTx: string; fillClass: string; filled: string; orderType: number; price: string; quantity: string; placeStatus: string; orderId: string | null; marketId: string } | null;
+  postOnly: OrderAttempt | null;
+  ioc: OrderAttempt | null;
 };
 
 type SettleEvidence = {
@@ -17,47 +32,130 @@ type SettleEvidence = {
   redeemTx: string | null;
 };
 
-export async function persistShannonGold(): Promise<{ runnerId: string }> {
-  const order = JSON.parse(
-    readFileSync(resolve(process.cwd(), "docs/evidence/shannon-order.json"), "utf8"),
-  ) as OrderEvidence;
-  const settle = JSON.parse(
-    readFileSync(resolve(process.cwd(), "docs/evidence/shannon-settlement.json"), "utf8"),
-  ) as SettleEvidence;
+const OWNER = "0xBDfCeE82Bd42FEfA58ee850B3709636a8B6b0034";
 
-  return withPool(async (c) => {
-    const runner = await c.query<{ id: string }>(
-      `INSERT INTO runners (vault, owner, operator, state, chain_id)
-       VALUES ($1, $2, $2, 'REDEEMED', 50312)
-       ON CONFLICT (chain_id, vault)
-       DO UPDATE SET state = 'REDEEMED', updated_at = now()
-       RETURNING id`,
-      [order.vault, "0xBDfCeE82Bd42FEfA58ee850B3709636a8B6b0034"],
-    );
-    const runnerId = runner.rows[0].id;
-    const lap = await c.query<{ id: string }>(
-      `INSERT INTO laps (runner_id, lap_index, market_id, pool, state, correlation_id)
-       VALUES ($1, 1, $2, $3, 'REDEEMED', $4)
-       ON CONFLICT (runner_id, lap_index)
-       DO UPDATE SET state = 'REDEEMED', market_id = EXCLUDED.market_id
-       RETURNING id`,
-      [runnerId, order.ioc?.marketId ?? order.postOnly.marketId, null, order.postOnly.correlationId],
-    );
-    const lapId = lap.rows[0].id;
-    for (const o of [order.postOnly, order.ioc]) {
-      if (!o) continue;
-      await c.query(
-        `INSERT INTO orders (lap_id, attempt_id, tx_hash, order_id, order_type, price, quantity, filled, fill_class, receipt_status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-         ON CONFLICT (attempt_id) DO UPDATE SET fill_class = EXCLUDED.fill_class, filled = EXCLUDED.filled`,
-        [lapId, o.correlationId, o.placeTx, o.orderId, o.orderType, o.price, o.quantity, o.filled, o.fillClass, o.placeStatus],
-      );
-    }
-    await c.query(
-      `INSERT INTO settlements (lap_id, market_id, resolved, voided, payout_numerators, redeem_tx)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [lapId, settle.marketId, settle.resolved, settle.voided, settle.payoutNumerators, settle.redeemTx],
-    );
-    return { runnerId };
+function readJson<T>(name: string): T | null {
+  const p = resolve(process.cwd(), "docs/evidence", name);
+  if (!existsSync(p)) return null;
+  return JSON.parse(readFileSync(p, "utf8")) as T;
+}
+
+export async function persistShannonGold(): Promise<{ runnerId: string }> {
+  const order = readJson<OrderEvidence>("shannon-order.json");
+  const settle = readJson<SettleEvidence>("shannon-settlement.json");
+  if (!order || !settle) throw new Error("missing shannon-order.json or shannon-settlement.json");
+  const attempt = order.ioc ?? order.postOnly;
+  if (!attempt) throw new Error("order evidence has neither ioc nor postOnly");
+
+  const runner = await ensureRunner({ vault: order.vault, owner: OWNER, operator: OWNER });
+  await persistWorkerStep({
+    runnerId: runner.id,
+    vault: order.vault,
+    lapIndex: 1,
+    marketId: attempt.marketId,
+    pool: attempt.pool ?? null,
+    correlationId: attempt.correlationId,
+    state: "REDEEMED",
+    order: {
+      attemptId: attempt.correlationId,
+      txHash: attempt.placeTx,
+      orderId: attempt.orderId,
+      orderType: attempt.orderType,
+      price: attempt.price,
+      quantity: attempt.quantity,
+      filled: attempt.filled,
+      fillClass: attempt.fillClass,
+      receiptStatus: attempt.placeStatus,
+    },
+    settlement: {
+      resolved: settle.resolved,
+      voided: settle.voided,
+      payoutNumerators: settle.payoutNumerators,
+      redeemTx: settle.redeemTx,
+    },
   });
+  await withPool(async (c) => {
+    await c.query(`UPDATE runners SET state = 'REDEEMED', updated_at = now() WHERE id = $1`, [runner.id]);
+  });
+  return { runnerId: runner.id };
+}
+
+export type GoldE2eEvidence = {
+  vault: string;
+  lap1: { marketId: string; fillClass?: string | null; placeTx?: string | null; filled?: string | null };
+  lap2: { marketId?: string | null; fillClass?: string | null; placeTx?: string | null; filled?: string | null };
+  settlement: {
+    redeemed: boolean;
+    redeemTx: string | null;
+    resolved?: boolean;
+    voided?: boolean;
+  };
+};
+
+export async function persistGoldE2e(evidence?: GoldE2eEvidence): Promise<{ runnerId: string }> {
+  const ev = evidence ?? readJson<GoldE2eEvidence>("shannon-gold-e2e.json");
+  if (!ev) throw new Error("missing shannon-gold-e2e.json");
+  const lap1 = readJson<OrderEvidence>("shannon-gold-lap1.json");
+  const lap2 = readJson<OrderEvidence>("shannon-gold-lap2.json");
+  const runner = await ensureRunner({ vault: ev.vault, owner: OWNER, operator: OWNER });
+
+  const a1 = lap1?.ioc ?? lap1?.postOnly;
+  if (a1) {
+    await persistWorkerStep({
+      runnerId: runner.id,
+      vault: ev.vault,
+      lapIndex: Math.max(1, runner.lap_index || 1),
+      marketId: a1.marketId,
+      pool: a1.pool ?? null,
+      correlationId: a1.correlationId,
+      state: ev.settlement.redeemed ? "REDEEMED" : "WAITING_SETTLEMENT",
+      order: {
+        attemptId: a1.correlationId,
+        txHash: a1.placeTx,
+        orderId: a1.orderId,
+        orderType: a1.orderType,
+        price: a1.price,
+        quantity: a1.quantity,
+        filled: a1.filled,
+        fillClass: a1.fillClass,
+        receiptStatus: a1.placeStatus,
+      },
+      settlement: {
+        resolved: Boolean(ev.settlement.resolved),
+        voided: Boolean(ev.settlement.voided),
+        payoutNumerators: [],
+        redeemTx: ev.settlement.redeemTx,
+      },
+    });
+  }
+  const a2 = lap2?.ioc ?? lap2?.postOnly;
+  if (a2) {
+    await persistWorkerStep({
+      runnerId: runner.id,
+      vault: ev.vault,
+      lapIndex: Math.max(2, (runner.lap_index || 1) + 1),
+      marketId: a2.marketId,
+      pool: a2.pool ?? null,
+      correlationId: a2.correlationId,
+      state: a2.fillClass === "FILL" || a2.fillClass === "PARTIAL_FILL" ? "FILLED" : "ORDER_SUBMITTED",
+      order: {
+        attemptId: a2.correlationId,
+        txHash: a2.placeTx,
+        orderId: a2.orderId,
+        orderType: a2.orderType,
+        price: a2.price,
+        quantity: a2.quantity,
+        filled: a2.filled,
+        fillClass: a2.fillClass,
+        receiptStatus: a2.placeStatus,
+      },
+    });
+  }
+  await withPool(async (c) => {
+    await c.query(
+      `UPDATE runners SET state = $2, last_market_id = $3, lap_index = GREATEST(lap_index, 2), updated_at = now() WHERE id = $1`,
+      [runner.id, a2 ? "FILLED" : "REDEEMED", a2?.marketId ?? ev.lap1.marketId],
+    );
+  });
+  return { runnerId: runner.id };
 }

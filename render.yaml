@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: relay-api
+    runtime: node
+    plan: starter
+    buildCommand: pnpm install --frozen-lockfile --prod=false
+    startCommand: pnpm api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: RELAY_NETWORK
+        value: shannon
+      - key: MAINNET_TRADING_ENABLED
+        value: "false"
+
+  - type: worker
+    name: relay-worker
+    runtime: node
+    plan: starter
+    buildCommand: pnpm install --frozen-lockfile --prod=false
+    startCommand: pnpm worker
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: RELAY_NETWORK
+        value: shannon
+      - key: MAINNET_TRADING_ENABLED
+        value: "false"

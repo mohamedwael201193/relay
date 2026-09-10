@@ -17,6 +17,14 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+      - name: policy
+        run: |
+          extra=$(git ls-files '*.md' | grep -vE '^README.md$' || true)
+          if [ -n "$extra" ]; then echo "only README.md may be tracked:" && echo "$extra" && exit 1; fi
+          if git ls-files | grep -E '(^\.env$|^\.env\.|HISTORY.md|^docs/evidence/)'; then
+            echo "secret or local-only path is tracked"
+            exit 1
+          fi
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm typecheck

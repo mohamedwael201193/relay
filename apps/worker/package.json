@@ -1,0 +1,15 @@
+{
+  "name": "@relay/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/worker.ts",
+    "once": "tsx src/worker.ts --once"
+  },
+  "dependencies": {
+    "@relay/core": "workspace:*",
+    "@relay/db": "workspace:*",
+    "viem": "^2.37.5"
+  }
+}

@@ -129,9 +129,10 @@ async function probeDatabase(checks: Check[]): Promise<void> {
   }
 }
 
-export async function runDoctor(): Promise<DoctorReport> {
+export async function runDoctor(opts?: { skipTooling?: boolean }): Promise<DoctorReport> {
   loadEnv();
   const checks: Check[] = [];
+  const skipTooling = Boolean(opts?.skipTooling);
 
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   add(
@@ -158,28 +159,30 @@ export async function runDoctor(): Promise<DoctorReport> {
   );
   add(checks, "pkg.viem", viemVersion.startsWith("2.") ? "PASS" : "FAIL", `installed ${viemVersion}`);
 
-  try {
-    const { execSync } = await import("node:child_process");
-    const git = execSync("git --version", { encoding: "utf8" }).trim();
-    add(checks, "tool.git", "PASS", git);
-  } catch {
-    add(checks, "tool.git", "FAIL", "git not found");
-  }
+  if (!skipTooling) {
+    try {
+      const { execSync } = await import("node:child_process");
+      const git = execSync("git --version", { encoding: "utf8" }).trim();
+      add(checks, "tool.git", "PASS", git);
+    } catch {
+      add(checks, "tool.git", "FAIL", "git not found");
+    }
 
-  try {
-    const { execSync } = await import("node:child_process");
-    const { existsSync } = await import("node:fs");
-    const { resolve } = await import("node:path");
-    const localForge = resolve(process.cwd(), ".vendor/foundry/forge.exe");
-    const cmd = existsSync(localForge) ? `"${localForge}" --version` : "forge --version";
-    const forge = execSync(cmd, { encoding: "utf8" }).trim().split("\n")[0];
-    add(checks, "tool.forge", "PASS", forge ?? "forge present");
-  } catch {
-    add(checks, "tool.forge", "FAIL", "forge not on PATH — Foundry required for contract tests");
-  }
+    try {
+      const { execSync } = await import("node:child_process");
+      const { existsSync } = await import("node:fs");
+      const { resolve } = await import("node:path");
+      const localForge = resolve(process.cwd(), ".vendor/foundry/forge.exe");
+      const cmd = existsSync(localForge) ? `"${localForge}" --version` : "forge --version";
+      const forge = execSync(cmd, { encoding: "utf8" }).trim().split("\n")[0];
+      add(checks, "tool.forge", "PASS", forge ?? "forge present");
+    } catch {
+      add(checks, "tool.forge", "FAIL", "forge not on PATH — Foundry required for contract tests");
+    }
 
-  await probeGithub(checks);
-  await probeRender(checks);
+    await probeGithub(checks);
+    await probeRender(checks);
+  }
   await probeDatabase(checks);
 
   const shannonRpc = envString("SOMNIA_SHANNON_RPC_URL", DEFAULT_SHANNON_RPC)!;

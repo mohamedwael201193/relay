@@ -132,12 +132,45 @@ export async function settleFilledMarket(account: LocalAccount, marketId: Hex) {
       redeemed = rcpt.status === "success";
     }
 
+    let outcome: "win" | "loss" | "void" | "unresolved" = "unresolved";
     if (afterPoke.isVoided) {
       await redeemSide(0, voidYes);
       await redeemSide(1, voidNo);
+      outcome = "void";
     } else {
       await redeemSide(win, amount);
+      outcome = amount === 0n ? "loss" : redeemed ? "win" : "win";
     }
+    const settled = afterPoke.isVoided
+      ? redeemed || (voidYes === 0n && voidNo === 0n)
+      : amount === 0n || redeemed;
+    if (amount === 0n && !afterPoke.isVoided) redeemed = false;
+
+    const vaultColAfter = await erc20Balance(client, COLLATERAL, dep.vault);
+    const evidence = {
+      chainId: 50312,
+      marketId,
+      vault: dep.vault,
+      statusBefore: before.statusLabel,
+      statusAfter: afterPoke.statusLabel,
+      resolved: afterPoke.isResolved,
+      voided: afterPoke.isVoided,
+      voidPolicy: afterPoke.voidPolicy,
+      payoutNumerators: afterPoke.payoutNumerators.map(String),
+      yesBal: yesBal.toString(),
+      noBal: noBal.toString(),
+      vaultCollateralBefore: vaultColBefore.toString(),
+      vaultCollateralAfter: vaultColAfter.toString(),
+      pokeAndSyncTxs: txs,
+      syncVaultTx,
+      redeemTx,
+      redeemed,
+      outcome,
+      settled,
+      winningOutcome: win,
+    };
+    writeEvidence("shannon-settlement.json", evidence);
+    return evidence;
   }
 
   const vaultColAfter = await erc20Balance(client, COLLATERAL, dep.vault);
@@ -158,7 +191,10 @@ export async function settleFilledMarket(account: LocalAccount, marketId: Hex) {
     pokeAndSyncTxs: txs,
     syncVaultTx,
     redeemTx,
-    redeemed,
+    redeemed: false,
+    outcome: "unresolved" as const,
+    settled: false,
+    winningOutcome: null as number | null,
   };
   writeEvidence("shannon-settlement.json", evidence);
   return evidence;

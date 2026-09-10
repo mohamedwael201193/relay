@@ -62,8 +62,11 @@ pnpm deploy:shannon    # deploy vault/registry/manager
 pnpm vault:fund       # deposit/withdraw + scratch kill
 pnpm place:shannon     # POST_ONLY then IOC with OrderFilled classification
 pnpm settle:shannon    # resolution backstop + redeem
-pnpm db:migrate        # Postgres schema (pooler DATABASE_URL)
-pnpm api               # health + runner read API
+pnpm reactivity:probe  # isolated BlockTick handler (32 STT, then withdraw)
+pnpm gold:e2e          # fill → wait → settle/redeem → autonomous lap 2
+pnpm db:migrate        # Postgres schema (pooler DATABASE_URL / DIRECT_URL for DDL)
+pnpm api               # health + runner/proof/network API
+pnpm worker            # single-writer agent with SKIP LOCKED restart reconcile
 pnpm test
 pnpm typecheck
 forge test
@@ -78,9 +81,10 @@ Environment variable **names** (values stay in gitignored files):
 ## Layout
 
 ```
-apps/api         HTTP health + runner reads
+apps/api         HTTP health, network, runner proof/history, SSE heartbeat
+apps/worker      Single-writer agent (discover → fill → settle → re-arm)
 packages/core    SDK pin, doctor, deploy, execution, settlement
-packages/db      Postgres migrations
+packages/db      Postgres migrations + SKIP LOCKED leases
 contracts/       Foundry (RunnerVault, RelayRegistry, ReactivityManager)
 scripts/         operator scripts
 ```
