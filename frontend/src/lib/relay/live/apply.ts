@@ -293,7 +293,7 @@ export function lapsFromHistory(
         ? 0
         : h.pnl != null && h.pnl !== ""
           ? Number(h.pnl) / 1e6
-          : 0;
+          : Number.NaN;
     const marketOutcome: Outcome = settle?.voided ? "VOID" : outcome === "LOSS" ? "DOWN" : "UP";
     return [{
       number: h.lap_index,

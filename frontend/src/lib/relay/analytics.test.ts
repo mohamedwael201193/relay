@@ -77,6 +77,15 @@ describe("summarizeTape", () => {
     expect(stats.netPnl).toBeNull();
     expect(stats.averageRealizedReturn).toBeNull();
   });
+
+  it("unknown tape pnl is omitted, not summed as zero", () => {
+    const stats = summarizeTape([
+      lap({ number: 1, outcome: "LOSS", pnl: Number.NaN, stake: 0.000077, entryPrice: 0.077 }),
+    ]);
+    expect(stats.losses).toBe(1);
+    expect(stats.netPnl).toBeNull();
+    expect(stats.realizedPnl).toBeNull();
+  });
 });
 
 describe("expectedFairPerLap", () => {

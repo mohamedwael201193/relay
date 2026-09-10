@@ -31,7 +31,8 @@ export function summarizeTape(laps: Lap[]): TapeStats {
   const open = laps.filter((l) => l.outcome === "OPEN").length;
   const decided = wins + losses;
   const closed = laps.filter((l) => l.outcome !== "OPEN");
-  const realized = closed.reduce((a, l) => a + l.pnl, 0);
+  const withPnl = closed.filter((l) => Number.isFinite(l.pnl));
+  const realized = withPnl.reduce((a, l) => a + l.pnl, 0);
   const stakes = laps.map((l) => l.stake).filter((s) => s > 0);
   const bestStreak = laps.reduce((m, l) => Math.max(m, l.streakAfter), 0);
   return {
@@ -43,12 +44,12 @@ export function summarizeTape(laps: Lap[]): TapeStats {
     open,
     winRate: decided > 0 ? wins / decided : null,
     lossRate: decided > 0 ? losses / decided : null,
-    netPnl: closed.length > 0 ? realized : null,
-    realizedPnl: closed.length > 0 ? realized : null,
+    netPnl: withPnl.length > 0 ? realized : null,
+    realizedPnl: withPnl.length > 0 ? realized : null,
     averageStake: stakes.length > 0 ? stakes.reduce((a, b) => a + b, 0) / stakes.length : null,
     sampleN: decided,
     bestStreak,
-    averageRealizedReturn: closed.length > 0 ? realized / closed.length : null,
+    averageRealizedReturn: withPnl.length > 0 ? realized / withPnl.length : null,
   };
 }
 
