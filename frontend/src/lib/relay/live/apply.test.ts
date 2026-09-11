@@ -973,9 +973,12 @@ describe("active lap market pin", () => {
     expect(hopped?.number).toBe(1);
     expect(hopped?.market.asset).toBe("BTC");
     expect(hopped?.market.marketId).toBe("0xbtc");
-    expect(hopped?.phase).toBe("RESULT");
+    expect(hopped?.phase).toBe("REARM");
     expect(hopped?.phaseHistory).toEqual(
-      expect.arrayContaining(["HOLD", "CLOSING", "ORACLE", "RESULT"]),
+      expect.arrayContaining(["HOLD", "CLOSING", "ORACLE", "RESULT", "CLAIM", "REARM"]),
+    );
+    expect(hopped?.events.map((e) => e.kind)).toEqual(
+      expect.arrayContaining(["CLOSING", "ORACLE", "RESULT", "CLAIM", "REARM"]),
     );
 
     const released = liveLapFromState({

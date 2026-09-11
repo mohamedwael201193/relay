@@ -30,6 +30,12 @@ describe("interpolatePhaseHistory", () => {
       "ORDER",
     ]);
   });
+
+  it("fills CLAIM when the client hops RESULT → REARM", () => {
+    expect(
+      interpolatePhaseHistory("REARM", ["SCAN", "ARMED", "ORDER", "FILL", "HOLD", "CLOSING", "ORACLE", "RESULT"], true),
+    ).toEqual(["SCAN", "ARMED", "ORDER", "FILL", "HOLD", "CLOSING", "ORACLE", "RESULT", "CLAIM", "REARM"]);
+  });
 });
 
 describe("deriveVisualPhase", () => {
@@ -119,9 +125,12 @@ describe("isNewSettledResult", () => {
 });
 
 describe("holdBackendState", () => {
-  it("maps redeemed + next-lap-started to REARMING so CLAIM/RE-ARM stay on the stepper", () => {
-    expect(holdBackendState("SETTLED_LOSS", true)).toBe("SETTLED_LOSS");
+  it("maps any settled outcome + next-lap-started to REARMING so CLAIM/RE-ARM stay on the stepper", () => {
+    expect(holdBackendState("SETTLED_LOSS", true)).toBe("REARMING");
+    expect(holdBackendState("SETTLED_WIN", true)).toBe("REARMING");
+    expect(holdBackendState("SETTLED_VOID", true)).toBe("REARMING");
     expect(holdBackendState("REDEEMED", true)).toBe("REARMING");
     expect(holdBackendState("REDEEMING", true)).toBe("REDEEMING");
+    expect(holdBackendState("SETTLED_LOSS", false)).toBe("SETTLED_LOSS");
   });
 });

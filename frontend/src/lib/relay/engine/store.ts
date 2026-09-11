@@ -66,7 +66,21 @@ export const useRelay = create<RelayStore>((set, get) => ({
     }
     if (parts[0] === "app") {
       const raw = parts[1] || "home";
-      const screen = (raw === "tape" ? "history" : raw === "alerts" ? "notifications" : raw) as AppScreen;
+      const aliased =
+        raw === "tape" ? "history" : raw === "alerts" ? "notifications" : raw === "profile" ? "runner" : raw;
+      const allowed: AppScreen[] = [
+        "home",
+        "deploy",
+        "live",
+        "result",
+        "arena",
+        "runner",
+        "history",
+        "analytics",
+        "notifications",
+        "settings",
+      ];
+      const screen = allowed.includes(aliased as AppScreen) ? (aliased as AppScreen) : "home";
       set({ view: "app", screen });
     }
   },

@@ -97,11 +97,23 @@ export function settleHoldLapIndex(opts: {
   return null;
 }
 
-/** Map a settled history row onto a backend state Live can still paint. */
+/**
+ * Map a settled history row onto a backend state Live can still paint.
+ * Overlay hold keeps the settled lapId. Once N+1 exists, paint CLAIM then
+ * RE-ARM as completed hops — worker often stays SETTLED_* after a 0-payout
+ * redeem instead of REDEEMED.
+ */
 export function holdBackendState(histState: string, nextLapAlreadyStarted: boolean): string {
   if (!nextLapAlreadyStarted) return histState;
   if (histState === "REDEEMING") return "REDEEMING";
-  if (histState === "REDEEMED") return "REARMING";
+  if (
+    histState === "REDEEMED" ||
+    histState === "SETTLED_WIN" ||
+    histState === "SETTLED_LOSS" ||
+    histState === "SETTLED_VOID"
+  ) {
+    return "REARMING";
+  }
   return histState;
 }
 
