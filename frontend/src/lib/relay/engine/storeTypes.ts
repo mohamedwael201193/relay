@@ -73,7 +73,7 @@ export interface RelayStore {
   backendLastError: string | null;
   apiError: string | null;
   txPhase: TxPhase | null;
-  boostIntent: { leaderVault: string } | null;
+  boostIntent: { leaderVault: string; childVault?: string } | null;
 
   go: (view: RelayView, screen?: AppScreen) => void;
   goScreen: (screen: AppScreen) => void;

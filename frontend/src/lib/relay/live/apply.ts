@@ -278,10 +278,14 @@ export function bookSnapshotFromLive(book: LiveMarketRow["book"] | null | undefi
 }
 
 export function calendarFromMarkets(rows: LiveMarketRow[], now: number): MarketWindow[] {
-  return rows
+  const windows = rows
     .filter((r) => r.onchainStatus === "Trading" || r.onchainStatus === "Locked")
-    .slice(0, 6)
     .map((r) => windowFromMarketRow(r, now));
+  const open = windows
+    .filter((w) => w.closesAt > now && (w.live || w.opensAt > now))
+    .sort((a, b) => a.closesAt - b.closesAt);
+  const rest = windows.filter((w) => !open.some((o) => o.marketId === w.marketId));
+  return [...open, ...rest].slice(0, 6);
 }
 
 export function liveLapFromState(opts: {

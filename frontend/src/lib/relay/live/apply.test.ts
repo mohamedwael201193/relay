@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arenaFromRows, assetFromMarket, bookSnapshotFromLive, impliedStartBankroll, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromBoosts, notificationsFromLaps, notificationsFromLifecycle, relationshipsFromArenaBoosts, sideFromKind, streakFromHistory } from "./apply";
+import { arenaFromRows, assetFromMarket, bookSnapshotFromLive, calendarFromMarkets, impliedStartBankroll, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromBoosts, notificationsFromLaps, notificationsFromLifecycle, relationshipsFromArenaBoosts, sideFromKind, streakFromHistory } from "./apply";
 import type { ArenaRow, HistoryLap, LiveMarketRow, ProofBundle } from "../api/client";
 import type { Lap } from "../types";
 
@@ -553,6 +553,39 @@ describe("bookSnapshotFromLive", () => {
     const empty = bookSnapshotFromLive({ bidUp: [], askUp: [], bidDown: [], askDown: [], spread: null });
     expect(empty.bidUp).toEqual([]);
     expect(Number.isNaN(empty.spread)).toBe(true);
+  });
+});
+
+describe("calendarFromMarkets", () => {
+  it("puts a still-open 15m window ahead of a locked 1m that already closed", () => {
+    const now = 1_000_000;
+    const cal = calendarFromMarkets(
+      [
+        {
+          marketId: "0x1m",
+          asset: "BTC",
+          intervalSec: "60",
+          expiry: String(Math.floor(now / 1000) - 10),
+          onchainStatus: "Locked",
+          pool: "0x1",
+          livePrice: 1,
+          openPrice: 1,
+        },
+        {
+          marketId: "0x15m",
+          asset: "BTC",
+          intervalSec: "900",
+          expiry: String(Math.floor(now / 1000) + 500),
+          onchainStatus: "Trading",
+          pool: "0x2",
+          livePrice: 1,
+          openPrice: 1,
+        },
+      ],
+      now,
+    );
+    expect(cal[0]?.marketId).toBe("0x15m");
+    expect(cal[0]?.closesAt).toBeGreaterThan(now);
   });
 });
 

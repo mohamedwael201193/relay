@@ -526,9 +526,17 @@ export function LiveBridge() {
           phase("Starting runner", "confirming");
           await relayApi.start(vault, authStart);
           const stillIntent = useRelay.getState().boostIntent;
-          useRelay.setState({ vaultAddress: vault, startBankroll: cfg.budget, boostIntent: stillIntent });
+          const listedAfter = await relayApi.runnersByOwner(owner).catch(() => ({ runners: [] as { vault: string; state: string }[] }));
+          const bind = pickOwnedVault(
+            listedAfter.runners,
+            stillIntent ? useRelay.getState().vaultAddress : vault,
+          );
+          useRelay.setState({
+            startBankroll: stillIntent ? useRelay.getState().startBankroll : cfg.budget,
+            boostIntent: stillIntent ? { ...stillIntent, childVault: vault } : null,
+          });
           await readWalletBalances(net, owner);
-          await refreshRunner(net, owner, vault);
+          await refreshRunner(net, owner, bind ?? vault);
           phase("Confirmed", "confirmed");
           if (!stillIntent) useRelay.getState().go("app", "live");
         } catch (e) {

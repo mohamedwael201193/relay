@@ -52,19 +52,19 @@ export function BoostDialog({
   const boostRunner = useRelay((s) => s.boostRunner);
   const txPhase = useRelay((s) => s.txPhase);
   const boostIntent = useRelay((s) => s.boostIntent);
-  const vaultAddress = useRelay((s) => s.vaultAddress);
   const [amount, setAmount] = useState(25);
   const [started, setStarted] = useState(false);
 
   const insufficient = wallet.tUSDC < amount;
   const self = !!entry.isYou;
+  const childVault = boostIntent?.childVault;
   const boosting = started && !!boostIntent;
   const failed = boosting && txPhase?.status === "failed";
   const complete =
     boosting &&
     txPhase?.status === "confirmed" &&
-    !!vaultAddress &&
-    vaultAddress.toLowerCase() !== entry.runnerId.toLowerCase();
+    !!childVault &&
+    childVault.toLowerCase() !== entry.runnerId.toLowerCase();
   const busy = boosting && !failed && !complete;
   const statusText = boostLabel(txPhase?.status, txPhase?.label, Boolean(failed), Boolean(complete));
 
@@ -147,8 +147,8 @@ export function BoostDialog({
             {txPhase?.hash ? (
               <div className="data mt-1 truncate text-[0.65rem] text-foam">{txPhase.hash}</div>
             ) : null}
-            {complete && vaultAddress ? (
-              <div className="data mt-1 truncate text-[0.65rem] text-foam">CHILD {vaultAddress}</div>
+            {complete && childVault ? (
+              <div className="data mt-1 truncate text-[0.65rem] text-foam">CHILD {childVault}</div>
             ) : null}
             {failed && txPhase?.label ? (
               <p className="mt-1 text-xs text-ember">{txPhase.label}</p>
