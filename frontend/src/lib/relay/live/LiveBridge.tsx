@@ -608,10 +608,13 @@ export function LiveBridge() {
         }
       },
       chargeShields: async () => {
+        phase("Checking shields bytecode", "waiting");
+        useRelay.setState({ apiError: null });
         try {
-          useRelay.setState({ apiError: null });
           const net = await relayApi.network();
-          const { walletClient, publicClient, owner } = await clients(net);
+          const rawOwner = ctx.current.owner || useRelay.getState().wallet.address;
+          if (!rawOwner) throw new Error("Connect a wallet first");
+          const owner = getAddress(rawOwner);
           const listed = await relayApi.runnersByOwner(owner);
           const vault = pickOwnedVault(listed.runners, useRelay.getState().vaultAddress);
           if (!vault || isOpsVault(vault)) {
@@ -621,21 +624,22 @@ export function LiveBridge() {
           if (n <= 0) {
             throw new Error("Pick 1–3 shields in the draft, then charge.");
           }
-          phase("Checking shields bytecode", "waiting");
+          const publicClient = await publicFor(net);
           try {
             await publicClient.simulateContract({
               address: vault as Address,
               abi: vaultWriteAbi,
               functionName: "setShieldsMax",
               args: [n],
-              account: owner as Address,
+              account: owner,
             });
           } catch {
             throw new Error(
               "This vault cannot charge shields on-chain. Kill it and deploy a new runner — CHARGE SHIELDS needs the newer bytecode.",
             );
           }
-          await send(walletClient, publicClient, {
+          const { walletClient, publicClient: signedPublic, owner: signer } = await clients(net);
+          await send(walletClient, signedPublic, {
             to: vault as Address,
             data: encodeFunctionData({
               abi: vaultWriteAbi,
@@ -643,7 +647,7 @@ export function LiveBridge() {
               args: [n],
             }),
           });
-          await refreshRunner(net, owner, vault);
+          await refreshRunner(net, signer, vault);
         } catch (e) {
           phase("Failed", "failed");
           reportApiError((e as Error).message);

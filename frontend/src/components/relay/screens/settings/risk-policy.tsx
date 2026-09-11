@@ -223,7 +223,7 @@ export function RiskPolicySection() {
               live={liveShields}
               hint={
                 isLiveMode() && streak.shieldsMax === 0
-                  ? "NEW VAULT BYTECODE CHARGES SHIELDS ON-CHAIN"
+                  ? "OLD BYTECODE REJECTS CHARGE — KILL AND DEPLOY A NEW RUNNER"
                   : "FIRST LOSS CONSUMES A CHARGE; WINS REFILL UNTIL MAX"
               }
             >
@@ -285,7 +285,7 @@ export function RiskPolicySection() {
             {isLiveMode() && needsSettlementAuth
               ? "this vault still needs the owner to grant the markets module as outcome-token operator once. after that, redeem and lap n+1 run unattended."
               : isLiveMode() && streak.shieldsMax === 0
-              ? "bias, budget and cadence stay locked mid-run. shields can be charged on this vault if it has the new bytecode."
+              ? "this vault's bytecode rejects setShieldsMax. kill it and deploy a new runner to charge shields on-chain."
               : "changes never apply mid-run — your live runner keeps its deployment config."}
           </p>
         </div>
