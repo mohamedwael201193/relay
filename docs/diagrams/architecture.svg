@@ -1,23 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1100" height="640" viewBox="0 0 1100 640" role="img" aria-label="RELAY three-plane architecture">
   <rect width="1100" height="640" fill="#F4F1E8"/>
   <text x="40" y="36" fill="#111111" font-family="Georgia, 'Times New Roman', serif" font-size="26">RELAY architecture</text>
-  <text x="40" y="58" fill="#555555" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12">Shannon testnet · chainId 50312 · three planes, no invented components</text>
+  <text x="40" y="58" fill="#555555" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12">Shannon testnet  /  chainId 50312  /  three planes, no invented components</text>
 
   <!-- CLIENT / DATA -->
   <rect x="24" y="78" width="1052" height="150" rx="10" fill="#111111"/>
   <text x="44" y="104" fill="#C8F542" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12" letter-spacing="2">CLIENT / DATA PLANE</text>
   <rect x="44" y="122" width="180" height="80" rx="6" fill="#1C1C1C" stroke="#C8F542"/>
   <text x="134" y="156" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="14">User</text>
-  <text x="134" y="176" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">wallet · Privy</text>
+  <text x="134" y="176" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">wallet  /  Privy</text>
   <rect x="264" y="122" width="220" height="80" rx="6" fill="#1C1C1C" stroke="#3A3A3A"/>
   <text x="374" y="156" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="14">Frontend</text>
-  <text x="374" y="176" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">Next.js · Vercel</text>
+  <text x="374" y="176" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">Next.js  /  Vercel</text>
   <rect x="524" y="122" width="250" height="80" rx="6" fill="#1C1C1C" stroke="#3A3A3A"/>
   <text x="649" y="150" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="14">Tape / Analytics / Arena</text>
-  <text x="649" y="172" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">Postgres cache · chain is truth</text>
+  <text x="649" y="172" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">Postgres cache  /  chain is truth</text>
   <rect x="814" y="122" width="236" height="80" rx="6" fill="#1C1C1C" stroke="#3A3A3A"/>
   <text x="932" y="156" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="14">API</text>
-  <text x="932" y="176" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">Render · owner-scoped</text>
+  <text x="932" y="176" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">Render  /  owner-scoped</text>
   <path d="M224 162 L264 162" stroke="#C8F542" stroke-width="2"/>
   <path d="M484 162 L524 162" stroke="#C8F542" stroke-width="2"/>
   <path d="M774 162 L814 162" stroke="#C8F542" stroke-width="2"/>
@@ -27,17 +27,17 @@
   <text x="44" y="274" fill="#C8F542" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12" letter-spacing="2">EXECUTION / WORKER PLANE</text>
   <rect x="44" y="292" width="490" height="72" rx="6" fill="#111111" stroke="#C8F542"/>
   <text x="289" y="322" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="15">Worker</text>
-  <text x="289" y="344" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">operator signer · SKIP LOCKED · discover ’ fill ’ settle ’ re-arm</text>
+  <text x="289" y="344" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">operator signer  /  SKIP LOCKED  /  discover  /  fill  /  settle  /  re-arm</text>
   <rect x="564" y="292" width="486" height="72" rx="6" fill="#111111" stroke="#3A3A3A"/>
   <text x="807" y="322" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="15">DreamDEX SDK 0.29.0</text>
-  <text x="807" y="344" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">listLiveBinaryMarkets · place · mintSet · OrderFilled</text>
+  <text x="807" y="344" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">listLiveBinaryMarkets  /  place  /  mintSet  /  OrderFilled</text>
 
   <!-- CONTRACT -->
   <rect x="24" y="408" width="1052" height="208" rx="10" fill="#111111"/>
   <text x="44" y="434" fill="#C8F542" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12" letter-spacing="2">CONTRACT PLANE</text>
   <rect x="44" y="452" width="200" height="72" rx="6" fill="#1C1C1C" stroke="#C8F542"/>
   <text x="144" y="482" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="14">RunnerVault</text>
-  <text x="144" y="502" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">user-owned · caps</text>
+  <text x="144" y="502" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">user-owned  /  caps</text>
   <rect x="264" y="452" width="200" height="72" rx="6" fill="#1C1C1C" stroke="#3A3A3A"/>
   <text x="364" y="482" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="14">DreamDEX</text>
   <text x="364" y="502" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">Event Contracts</text>
@@ -51,9 +51,9 @@
   <text x="978" y="482" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="14">Settlement</text>
   <text x="978" y="502" text-anchor="middle" fill="#8A8A8A" font-family="ui-monospace, Menlo, Consolas" font-size="11">LapSettled</text>
   <rect x="44" y="544" width="330" height="52" rx="6" fill="#1C1C1C" stroke="#3A3A3A"/>
-  <text x="209" y="576" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="13">BoostController · new RunnerVault</text>
+  <text x="209" y="576" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="13">BoostController  /  new RunnerVault</text>
   <rect x="394" y="544" width="330" height="52" rx="6" fill="#1C1C1C" stroke="#3A3A3A"/>
-  <text x="559" y="576" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="13">ReactivityManager · subscribe vault</text>
+  <text x="559" y="576" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="13">ReactivityManager  /  subscribe vault</text>
   <rect x="744" y="544" width="308" height="52" rx="6" fill="#1C1C1C" stroke="#3A3A3A"/>
   <text x="898" y="576" text-anchor="middle" fill="#F4F1E8" font-family="ui-sans-serif, system-ui" font-size="13">RelayRegistry</text>
   <path d="M244 488 L264 488" stroke="#C8F542" stroke-width="2"/>

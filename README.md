@@ -95,7 +95,7 @@ Scan uses `listLiveBinaryMarkets` plus `getMarketOnchain` (`status == 1` / Tradi
 Three planes. Nothing invented.
 
 <p align="center">
-  <img src="docs/diagrams/architecture.svg" width="920" alt="RELAY architecture: client, worker, and contract planes" />
+  <img src="docs/diagrams/architecture.png" width="920" alt="RELAY architecture: client, worker, and contract planes" />
 </p>
 
 ```
