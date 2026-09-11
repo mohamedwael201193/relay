@@ -5,6 +5,7 @@ import { EMPTY_BOOK } from "../config/network";
 import {
   deriveVisualPhase,
   hasOracleAnswer,
+  holdBackendState,
   interpolatePhaseHistory,
   intervalMsFromSec,
   isInFlightState,
@@ -295,21 +296,36 @@ export function liveLapFromState(opts: {
   now: number;
   history?: HistoryLap[];
   prev?: LiveLap | null;
+  /** Settled lap to keep on Live while RESULT overlay is open and N+1 has already started. */
+  settleHoldLap?: number | null;
 }): LiveLap | null {
-  const mapped = mapBackendState(opts.row.state);
+  const holdIdx = opts.settleHoldLap && opts.settleHoldLap > 0 ? opts.settleHoldLap : 0;
+  const holdHist = holdIdx ? opts.history?.find((h) => h.lap_index === holdIdx) : undefined;
+  const nextStarted = Boolean(holdHist && (opts.row.lap_index || 0) > holdHist.lap_index);
+  const row =
+    nextStarted && holdHist
+      ? {
+          ...opts.row,
+          lap_index: holdHist.lap_index,
+          last_market_id: holdHist.market_id,
+          state: holdBackendState(holdHist.state, true),
+          last_error: null,
+        }
+      : opts.row;
+  const mapped = mapBackendState(row.state);
   if (!mapped.phase) return null;
-  const lastId = (opts.row.last_market_id ?? "").toLowerCase();
-  const lapIndex = opts.row.lap_index || 0;
+  const lastId = (row.last_market_id ?? "").toLowerCase();
+  const lapIndex = row.lap_index || 0;
   const prevLap = opts.prev ?? null;
   const sameLap = Boolean(prevLap && prevLap.number === lapIndex && lapIndex > 0);
   const freeze = Boolean(
     sameLap &&
       prevLap &&
       prevLap.phase !== "SCAN" &&
-      (isInFlightState(opts.row.state) ||
-        opts.row.state === "DISCOVERING" ||
-        opts.row.state === "REARMING" ||
-        opts.row.state === "ACTIVE"),
+      (isInFlightState(row.state) ||
+        row.state === "DISCOVERING" ||
+        row.state === "REARMING" ||
+        row.state === "ACTIVE"),
   );
   const pinnedId = (freeze && prevLap ? prevLap.market.marketId : lastId).toLowerCase();
   const raw = pinnedId ? opts.markets.find((m) => m.marketId.toLowerCase() === pinnedId) : undefined;
@@ -355,7 +371,7 @@ export function liveLapFromState(opts: {
       collateral: "tUSDC",
       live: raw?.onchainStatus === "Trading",
     };
-  } else if (!isInFlightState(opts.row.state)) {
+  } else if (!isInFlightState(row.state)) {
     const cal = calendarFromMarkets(opts.markets, opts.now);
     market = cal[0] ?? null;
   }
@@ -366,15 +382,15 @@ export function liveLapFromState(opts: {
   const verifiedFill = Boolean(lastOrder && fillIsVerified(lastOrder.fill_class));
   const side = sideFromKind((lastOrder as { kind?: string | number | null } | undefined)?.kind);
   const phase = deriveVisualPhase({
-    backendState: opts.row.state,
+    backendState: row.state,
     verifiedFill,
     now: opts.now,
     closesAt: market.closesAt,
-    lastError: opts.row.last_error,
+    lastError: row.last_error,
     hasOracleAnswer: hasOracleAnswer({
       hist,
       settlement,
-      lastError: opts.row.last_error,
+      lastError: row.last_error,
     }),
     histState: hist?.state,
   });
@@ -408,8 +424,8 @@ export function liveLapFromState(opts: {
     position:
       verifiedFill && lastOrder
         ? {
-            id: `pos-${opts.row.lap_index}`,
-            lapNumber: opts.row.lap_index,
+            id: `pos-${row.lap_index}`,
+            lapNumber: row.lap_index,
             marketId: lastOrder.market_id,
             side,
             stake,
@@ -450,8 +466,8 @@ export function liveLapFromState(opts: {
       prevLap,
       sameLap,
       opts.now,
-      opts.row.last_error,
-      opts.row.last_market_id ?? undefined,
+      row.last_error,
+      row.last_market_id ?? undefined,
     ),
   };
 }

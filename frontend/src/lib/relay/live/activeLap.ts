@@ -81,6 +81,38 @@ export function interpolatePhaseHistory(to: LapPhase, prev: LapPhase[] | undefin
   return LAP_PHASE_ORDER.filter((p) => reached.has(p) && LAP_PHASE_ORDER.indexOf(p) <= toIdx);
 }
 
+/**
+ * RESULT overlay owns the settled identity. If the worker already armed N+1,
+ * Live stays on the settled lap until KEEP WATCHING — no fake delay, completed state.
+ */
+export function settleHoldLapIndex(opts: {
+  overlayOpen: boolean;
+  lastSettledLap: number | null | undefined;
+  currentLapIndex: number;
+}): number | null {
+  if (!opts.overlayOpen) return null;
+  const settled = opts.lastSettledLap ?? 0;
+  if (settled <= 0) return null;
+  if (opts.currentLapIndex > settled) return settled;
+  return null;
+}
+
+/** Map a settled history row onto a backend state Live can still paint. */
+export function holdBackendState(histState: string, nextLapAlreadyStarted: boolean): string {
+  if (!nextLapAlreadyStarted) return histState;
+  if (histState === "REDEEMING") return "REDEEMING";
+  if (histState === "REDEEMED") return "REARMING";
+  return histState;
+}
+
+export function isNewSettledResult(
+  prevLaps: ReadonlyArray<{ number: number; outcome: string }>,
+  resultLap: number | null | undefined,
+): boolean {
+  if (resultLap == null) return false;
+  return prevLaps.some((l) => l.number === resultLap && l.outcome === "OPEN");
+}
+
 export function deriveVisualPhase(opts: {
   backendState: string;
   verifiedFill: boolean;

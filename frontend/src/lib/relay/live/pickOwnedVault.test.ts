@@ -61,6 +61,31 @@ describe("pickOwnedVault", () => {
       ),
     ).toBe(parent);
   });
+
+  it("without a hint, prefers the in-flight vault with the higher lap index", () => {
+    const parent = "0xca3972699b1776b78557aa3b561d3be4c764702a";
+    const child = "0xead6aee211048699a74b7a16c917634842a7b6b7";
+    expect(
+      pickOwnedVault([
+        { vault: child, state: "FILLED", lap_index: 2 },
+        { vault: parent, state: "FILLED", lap_index: 12 },
+      ]),
+    ).toBe(parent);
+  });
+
+  it("keeps the hinted in-flight vault even if a sibling has a higher lap index", () => {
+    const parent = "0xca3972699b1776b78557aa3b561d3be4c764702a";
+    const child = "0xead6aee211048699a74b7a16c917634842a7b6b7";
+    expect(
+      pickOwnedVault(
+        [
+          { vault: child, state: "FILLED", lap_index: 2 },
+          { vault: parent, state: "FILLED", lap_index: 12 },
+        ],
+        child,
+      ),
+    ).toBe(child);
+  });
 });
 
 describe("selectDeployVault", () => {

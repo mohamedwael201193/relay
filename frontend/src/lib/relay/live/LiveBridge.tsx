@@ -44,6 +44,7 @@ import {
   streakFromHistory,
 } from "@/lib/relay/live/apply";
 import { resultFromLap } from "@/lib/relay/analytics";
+import { isNewSettledResult, settleHoldLapIndex } from "@/lib/relay/live/activeLap";
 
 type EthereumProvider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
 type ConnectedWallet = {
@@ -129,7 +130,7 @@ async function readWalletBalances(net: NetworkConfig, owner: string) {
 
 async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: string | null) {
   const listed = await relayApi.runnersByOwner(owner);
-  const vault = pickOwnedVault(listed.runners, vaultHint);
+  const vault = pickOwnedVault(listed.runners, vaultHint ?? useRelay.getState().vaultAddress);
   if (!vault) {
     const arena = await relayApi.arena().catch(() => ({ runners: [] as never[], boosts: [] as never[] }));
     const mappedArena = arenaFromRows(arena.runners ?? [], null);
@@ -218,10 +219,13 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
   const lastSettled = [...mappedLaps].reverse().find((l) => l.outcome !== "OPEN");
   const builtResult = lastSettled ? resultFromLap(lastSettled, vaultBal) : null;
   const prev = useRelay.getState();
-  const isNewResult = Boolean(
-    builtResult &&
-      prev.laps.some((l) => l.number === builtResult.lap && l.outcome === "OPEN"),
-  );
+  const isNewResult = isNewSettledResult(prev.laps, builtResult?.lap);
+  const overlayOpen = isNewResult || prev.resultOpen;
+  const settleHoldLap = settleHoldLapIndex({
+    overlayOpen,
+    lastSettledLap: lastSettled?.number,
+    currentLapIndex: row.lap_index,
+  });
   const lapNotes = notificationsFromLaps(prev.laps, mappedLaps);
   const mappedArena = arenaFromRows(arena.runners ?? [], vault);
   const mappedBoosts = relationshipsFromArenaBoosts("boosts" in arena ? arena.boosts ?? [] : [], mappedArena);
@@ -242,6 +246,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     now,
     history: historyLaps,
     prev: prev.liveLap,
+    settleHoldLap,
   });
   const activeMarketId = (liveLap?.market.marketId ?? lastId).toLowerCase();
   const histRow = marketsRows.find((m) => m.marketId.toLowerCase() === activeMarketId);
@@ -850,8 +855,12 @@ export function LiveBridge() {
       }
     };
     attachEs();
+    const unsubResult = useRelay.subscribe((s, p) => {
+      if (p.resultOpen && !s.resultOpen) pull();
+    });
     return () => {
       cancelled = true;
+      unsubResult();
       window.clearInterval(poll);
       window.clearTimeout(clockAlign);
       if (clockInterval) window.clearInterval(clockInterval);

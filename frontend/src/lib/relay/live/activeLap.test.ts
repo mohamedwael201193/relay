@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { deriveVisualPhase, interpolatePhaseHistory, remainingMs, windowBounds } from "./activeLap";
+import {
+  deriveVisualPhase,
+  holdBackendState,
+  interpolatePhaseHistory,
+  isNewSettledResult,
+  remainingMs,
+  settleHoldLapIndex,
+  windowBounds,
+} from "./activeLap";
 
 describe("interpolatePhaseHistory", () => {
   it("fills CLOSE and ORACLE when the client hops HOLD → RESULT", () => {
@@ -75,5 +83,45 @@ describe("windowBounds", () => {
 describe("remainingMs", () => {
   it("returns NaN when close time is unknown", () => {
     expect(Number.isNaN(remainingMs(0, 1))).toBe(true);
+  });
+});
+
+describe("settleHoldLapIndex", () => {
+  it("holds the settled lap when overlay is open and N+1 has already started", () => {
+    expect(
+      settleHoldLapIndex({ overlayOpen: true, lastSettledLap: 11, currentLapIndex: 12 }),
+    ).toBe(11);
+  });
+
+  it("does not hold after KEEP WATCHING or when still on the settled lap", () => {
+    expect(
+      settleHoldLapIndex({ overlayOpen: false, lastSettledLap: 11, currentLapIndex: 12 }),
+    ).toBeNull();
+    expect(
+      settleHoldLapIndex({ overlayOpen: true, lastSettledLap: 11, currentLapIndex: 11 }),
+    ).toBeNull();
+  });
+});
+
+describe("isNewSettledResult", () => {
+  it("fires when the settled lap was OPEN on the previous tape even if N+1 is already FILLED", () => {
+    expect(
+      isNewSettledResult(
+        [
+          { number: 11, outcome: "OPEN" },
+          { number: 12, outcome: "OPEN" },
+        ],
+        11,
+      ),
+    ).toBe(true);
+    expect(isNewSettledResult([{ number: 11, outcome: "LOSS" }], 11)).toBe(false);
+  });
+});
+
+describe("holdBackendState", () => {
+  it("maps redeemed + next-lap-started to REARMING so CLAIM/RE-ARM stay on the stepper", () => {
+    expect(holdBackendState("SETTLED_LOSS", true)).toBe("SETTLED_LOSS");
+    expect(holdBackendState("REDEEMED", true)).toBe("REARMING");
+    expect(holdBackendState("REDEEMING", true)).toBe("REDEEMING");
   });
 });

@@ -807,4 +807,145 @@ describe("active lap market pin", () => {
       expect.arrayContaining(["HOLD", "CLOSING", "ORACLE", "RESULT"]),
     );
   });
+
+  it("keeps the settled lap identity while overlay hold is set and N+1 is already FILLED", () => {
+    const now = Date.now();
+    const proof: ProofBundle = {
+      orders: [
+        {
+          tx_hash: "0xf1",
+          fill_class: "FILL",
+          filled: "1000000",
+          market_id: "0xbtc",
+          lap_index: 1,
+          created_at: history[0]!.created_at,
+          price: "500000",
+          quantity: "1000000",
+          kind: "BUY_YES",
+        },
+        {
+          tx_hash: "0xf2",
+          fill_class: "FILL",
+          filled: "1000000",
+          market_id: "0xeth",
+          lap_index: 2,
+          created_at: new Date(now).toISOString(),
+          price: "400000",
+          quantity: "1000000",
+          kind: "BUY_NO",
+        },
+      ],
+      settlements: [
+        {
+          market_id: "0xbtc",
+          resolved: true,
+          voided: false,
+          redeem_tx: "0xsettle",
+          payout_numerators: ["0", "1"],
+          lap_index: 1,
+          created_at: new Date(now).toISOString(),
+        },
+      ],
+      records: [],
+    };
+    const holding = liveLapFromState({
+      row: btcRow,
+      markets: [
+        {
+          marketId: "0xbtc",
+          asset: "BTC",
+          intervalSec: "900",
+          expiry: String(Math.floor(now / 1000) + 60),
+          onchainStatus: "Trading",
+          pool: "0x1",
+        },
+      ],
+      proof,
+      now,
+      history,
+    });
+    expect(holding?.number).toBe(1);
+    expect(holding?.phase).toBe("HOLD");
+
+    const hopped = liveLapFromState({
+      row: { ...btcRow, state: "FILLED", lap_index: 2, last_market_id: "0xeth" },
+      markets: [
+        {
+          marketId: "0xbtc",
+          asset: "BTC",
+          intervalSec: "900",
+          expiry: String(Math.floor(now / 1000) - 5),
+          onchainStatus: "Resolved",
+          pool: "0x1",
+        },
+        {
+          marketId: "0xeth",
+          asset: "ETH",
+          intervalSec: "900",
+          expiry: String(Math.floor(now / 1000) + 800),
+          onchainStatus: "Trading",
+          pool: "0x1",
+        },
+      ],
+      proof,
+      now,
+      history: [
+        { ...history[0]!, state: "SETTLED_LOSS", close_price: "77000" },
+        {
+          id: "2",
+          lap_index: 2,
+          market_id: "0xeth",
+          pool: null,
+          state: "FILLED",
+          correlation_id: null,
+          created_at: new Date(now).toISOString(),
+          asset: "ETH",
+          interval_sec: "900",
+        },
+      ],
+      prev: holding,
+      settleHoldLap: 1,
+    });
+    expect(hopped?.number).toBe(1);
+    expect(hopped?.market.asset).toBe("BTC");
+    expect(hopped?.market.marketId).toBe("0xbtc");
+    expect(hopped?.phase).toBe("RESULT");
+    expect(hopped?.phaseHistory).toEqual(
+      expect.arrayContaining(["HOLD", "CLOSING", "ORACLE", "RESULT"]),
+    );
+
+    const released = liveLapFromState({
+      row: { ...btcRow, state: "FILLED", lap_index: 2, last_market_id: "0xeth" },
+      markets: [
+        {
+          marketId: "0xeth",
+          asset: "ETH",
+          intervalSec: "900",
+          expiry: String(Math.floor(now / 1000) + 800),
+          onchainStatus: "Trading",
+          pool: "0x1",
+        },
+      ],
+      proof,
+      now,
+      history: [
+        { ...history[0]!, state: "SETTLED_LOSS" },
+        {
+          id: "2",
+          lap_index: 2,
+          market_id: "0xeth",
+          pool: null,
+          state: "FILLED",
+          correlation_id: null,
+          created_at: new Date(now).toISOString(),
+          asset: "ETH",
+          interval_sec: "900",
+        },
+      ],
+      prev: hopped,
+    });
+    expect(released?.number).toBe(2);
+    expect(released?.market.asset).toBe("ETH");
+    expect(released?.market.marketId).toBe("0xeth");
+  });
 });

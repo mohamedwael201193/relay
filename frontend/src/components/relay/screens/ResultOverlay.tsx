@@ -2,9 +2,8 @@
 
 /**
  * RELAY — the RESULT OVERLAY.
- * The emotional moment of the product: a full-screen takeover when a lap
- * settles on-chain. Loud on wins, dignified on losses, calm on voids.
- * Auto-dismisses when the baton passes to the next lap.
+ * Full-screen takeover when a lap settles on-chain.
+ * Stays until KEEP WATCHING / Esc. Mock baton-pass still takes the stage.
  */
 
 import { AnimatePresence, motion } from "framer-motion";
@@ -32,13 +31,13 @@ export function ResultOverlay() {
   const dismiss = useRelay((s) => s.dismissResult);
   const goScreen = useRelay((s) => s.goScreen);
   const baton = useRelay((s) => s.baton);
-  const phase = useRelay((s) => s.liveLap?.phase);
   const primaryRef = useRef<HTMLButtonElement>(null);
 
-  /* the baton pass takes over the screen — hand it the stage */
+  /* mock baton-pass takes the stage; production must not auto-dismiss on RE-ARM
+     or a HOLD→SETTLED→next-lap hop hides RESULT entirely. */
   useEffect(() => {
-    if (resultOpen && (baton != null || phase === "REARM")) dismiss();
-  }, [resultOpen, baton, phase, dismiss]);
+    if (resultOpen && baton != null) dismiss();
+  }, [resultOpen, baton, dismiss]);
 
   /* Esc dismisses */
   useEffect(() => {
