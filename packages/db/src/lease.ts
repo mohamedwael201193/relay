@@ -75,11 +75,13 @@ const CLAIMABLE_STATES = [
   "ERROR",
 ] as const;
 
-/** Parked / waiting last_error values that must not starve other runners. */
+/**
+ * Parked errors that cannot make chain progress this tick.
+ * Do NOT yield `settlement_pending` or `waiting_reactivity` — that buried
+ * CLOSE→settle behind DISCOVERING vaults for tens of minutes (lap 60: 2842s).
+ */
 export const CLAIM_YIELD_ERRORS = [
-  "waiting_reactivity",
   "needs_outcome_approval",
-  "settlement_pending",
   "daily_loss_exceeded",
 ] as const;
 

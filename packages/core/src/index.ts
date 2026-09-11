@@ -75,6 +75,7 @@ export {
   derivedPnlRaw,
   voidExpiredIsCallable,
   shouldWaitForReactivity,
+  shouldEndWorkerBurst,
 } from "./settleGate.js";
 export {
   classifyFill,

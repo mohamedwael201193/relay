@@ -5,6 +5,7 @@ import {
   settlementIsFinal,
   settlementsMissingProofTx,
   shouldWaitForReactivity,
+  shouldEndWorkerBurst,
   voidExpiredIsCallable,
 } from "./settleGate.js";
 
@@ -127,5 +128,46 @@ describe("shouldWaitForReactivity", () => {
     expect(shouldWaitForReactivity({ ...base, alreadyWaited: true })).toBe(false);
     expect(shouldWaitForReactivity({ ...base, subscribed: false })).toBe(false);
     expect(shouldWaitForReactivity({ ...base, marketTerminal: false })).toBe(false);
+  });
+});
+
+describe("CLOSE → resolved oracle → settle → redeem → re-arm", () => {
+  const market = "0x000000000000000000000000000000000000000000000000000000000001a490";
+  const fill = { fill_class: "FILL" as const, market_id: market };
+  const proof = "0x" + "d4".repeat(32);
+
+  it("detects a fill as needing settle until redeem proof exists", () => {
+    expect(filledOrderNeedsSettle(fill, undefined)).toBe(true);
+    expect(
+      filledOrderNeedsSettle(fill, { market_id: market, resolved: false, voided: false }),
+    ).toBe(true);
+  });
+
+  it("waits one Reactivity tick then recovers with syncResolution", () => {
+    const gate = {
+      marketTerminal: true,
+      subscribed: true,
+      armedActive: true,
+      armedMarketId: market,
+      marketId: market,
+      alreadyWaited: false,
+    };
+    expect(shouldWaitForReactivity(gate)).toBe(true);
+    expect(shouldWaitForReactivity({ ...gate, alreadyWaited: true })).toBe(false);
+    expect(shouldEndWorkerBurst("waiting_reactivity")).toBe(true);
+    expect(shouldEndWorkerBurst("settlement_pending")).toBe(false);
+  });
+
+  it("stops needing settle after a resolved redeem, which unblocks re-arm", () => {
+    expect(
+      filledOrderNeedsSettle(fill, {
+        market_id: market,
+        resolved: true,
+        voided: false,
+        redeem_tx: proof,
+      }),
+    ).toBe(false);
+    expect(shouldEndWorkerBurst("filled")).toBe(true);
+    expect(shouldEndWorkerBurst("placed")).toBe(true);
   });
 });

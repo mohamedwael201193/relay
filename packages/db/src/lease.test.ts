@@ -6,11 +6,16 @@ import { withPool } from "./pool.js";
 loadEnv();
 
 describe("claimPriority", () => {
-  it("yields waiting reactivity and daily-loss so other vaults can run", () => {
+  it("keeps CLOSE→oracle backstop ahead of discover/place", () => {
     expect(claimPriority("WAITING_SETTLEMENT", null)).toBe(0);
-    expect(claimPriority("WAITING_SETTLEMENT", "waiting_reactivity")).toBe(2);
-    expect(claimPriority("WAITING_SETTLEMENT", "settlement_pending")).toBe(2);
+    expect(claimPriority("WAITING_SETTLEMENT", "waiting_reactivity")).toBe(0);
+    expect(claimPriority("WAITING_SETTLEMENT", "settlement_pending")).toBe(0);
+    expect(claimPriority("DISCOVERING", null)).toBe(1);
     expect(claimPriority("ACTIVE", null)).toBe(1);
+    expect(claimPriority("WAITING_SETTLEMENT", "settlement_pending")).toBeLessThan(
+      claimPriority("DISCOVERING", null),
+    );
+    expect(claimPriority("ERROR", "needs_outcome_approval")).toBe(2);
     expect(claimPriority("ERROR", "daily_loss_exceeded")).toBe(2);
     expect(claimPriority("FILLED", null)).toBe(0);
   });

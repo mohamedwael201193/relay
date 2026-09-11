@@ -73,6 +73,9 @@ export function voidExpiredIsCallable(
  * Sequence pattern: Reactivity `_onEvent` is the primary vault settle.
  * `syncResolution` is recovery when there is no subscription or the
  * callback did not consume the arm after one wait.
+ *
+ * The wait is exactly one worker interval (caller must sleep). It must not
+ * deprioritize the vault in SKIP LOCKED — that turned a 15s wait into ~47 min.
  */
 export function shouldWaitForReactivity(opts: {
   marketTerminal: boolean;
@@ -87,6 +90,22 @@ export function shouldWaitForReactivity(opts: {
   if (opts.alreadyWaited) return false;
   if (!opts.armedActive) return false;
   return opts.armedMarketId.toLowerCase() === opts.marketId.toLowerCase();
+}
+
+/**
+ * End the inner claim burst so `waiting_reactivity` can actually elapse the
+ * 15s worker interval. Keep `settlement_pending` in the burst so poke/sync
+ * round-robins other vaults instead of sleeping while the oracle is already up.
+ */
+export function shouldEndWorkerBurst(action: string): boolean {
+  return (
+    action === "no_lease" ||
+    action === "doctor_block" ||
+    action === "filled" ||
+    action === "placed" ||
+    action === "no_attempt" ||
+    action === "waiting_reactivity"
+  );
 }
 
 /** Reconstruct pnl from escrow + redeem when the worker did not persist it. Never invents. */

@@ -3,6 +3,7 @@ import {
   collateralCostForKind,
   FRESH_WINDOW_FRAC,
   filledOrderNeedsSettle,
+  shouldEndWorkerBurst,
   marketOracleMeta,
   readLapSettledProofTx,
   settlementsMissingProofTx,
@@ -464,8 +465,7 @@ export async function runWorkerLoop(account: LocalAccount, opts: { once?: boolea
       while (Date.now() < deadline) {
         const out = await reconcileOnce(account);
         log("tick", out);
-        if (out.action === "no_lease" || out.action === "doctor_block") break;
-        if (out.action === "filled" || out.action === "placed" || out.action === "no_attempt") break;
+        if (shouldEndWorkerBurst(out.action)) break;
       }
     } catch (e) {
       log("tick_error", { error: (e as Error).message });
