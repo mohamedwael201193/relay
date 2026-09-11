@@ -18,6 +18,7 @@ import type { ArenaRunner } from "@/lib/relay/types";
 import { cn } from "@/lib/utils";
 import { Sparkline } from "../../core/primitives";
 import { FlameMark, RunnerGlyph } from "../../identity/identity";
+import { isLiveMode } from "@/lib/relay/live/mode";
 
 export function Lane({
   entry,
@@ -30,7 +31,7 @@ export function Lane({
   onOpen: (runnerId: string) => void;
   onToggleFollow: (runnerId: string) => void;
 }) {
-  const up = entry.pnl7d >= 0;
+  const up = Number.isFinite(entry.pnl7d) && entry.pnl7d >= 0;
 
   return (
     <motion.div
@@ -96,10 +97,12 @@ export function Lane({
           </div>
         </div>
 
-        {/* spark — the bankroll trail */}
-        <div className="hidden shrink-0 md:block">
-          <Sparkline values={entry.spark} width={112} height={36} />
-        </div>
+        {/* spark — the bankroll trail, only from verified points */}
+        {entry.spark.length > 0 ? (
+          <div className="hidden shrink-0 md:block">
+            <Sparkline values={entry.spark} width={112} height={36} />
+          </div>
+        ) : null}
 
         {/* stats */}
         <div className="hidden shrink-0 items-center gap-4 md:flex">
@@ -115,10 +118,12 @@ export function Lane({
             <div className="data text-sm leading-none">{entry.laps}</div>
             <div className="mlabel mt-1 text-foam/60">LAPS</div>
           </div>
-          <div className="w-12 text-right">
-            <div className="data text-sm leading-none">{entry.followers}</div>
-            <div className="mlabel mt-1 text-foam/60">FOLLOW</div>
-          </div>
+          {!(isLiveMode() && entry.followers === 0) && (
+            <div className="w-12 text-right">
+              <div className="data text-sm leading-none">{entry.followers}</div>
+              <div className="mlabel mt-1 text-foam/60">FOLLOW</div>
+            </div>
+          )}
         </div>
 
         {/* 7-day pnl */}

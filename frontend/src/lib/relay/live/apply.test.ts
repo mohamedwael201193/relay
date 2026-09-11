@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetFromMarket, bookSnapshotFromLive, impliedStartBankroll, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromBoosts, notificationsFromLaps, relationshipsFromArenaBoosts, sideFromKind, streakFromHistory } from "./apply";
+import { assetFromMarket, bookSnapshotFromLive, impliedStartBankroll, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromBoosts, notificationsFromLaps, notificationsFromLifecycle, relationshipsFromArenaBoosts, sideFromKind, streakFromHistory } from "./apply";
 import type { HistoryLap, LiveMarketRow, ProofBundle } from "../api/client";
 import type { Lap } from "../types";
 
@@ -334,6 +334,90 @@ describe("notificationsFromLaps", () => {
   it("does not re-notify an already settled outcome", () => {
     const win = tapeLap({ number: 1, outcome: "WIN", pnl: 0.4, streakAfter: 1 });
     expect(notificationsFromLaps([win], [win])).toEqual([]);
+  });
+
+  it("emits FILL for a new verified fill and SHIELD for an absorbed loss", () => {
+    const openNoFill = tapeLap({
+      number: 4,
+      outcome: "OPEN",
+      pnl: Number.NaN,
+      fill: {
+        id: "f",
+        orderId: "o",
+        price: 0.66,
+        quantity: 1,
+        filledAt: 9,
+        tx: { hash: "", block: 0, at: 0 },
+      },
+    });
+    const openFilled = tapeLap({
+      number: 4,
+      outcome: "OPEN",
+      pnl: Number.NaN,
+      fill: {
+        id: "f",
+        orderId: "o",
+        price: 0.66,
+        quantity: 1,
+        filledAt: 9,
+        tx: { hash: "0x8c461814951f44451e21fac2a82751a43590587b", block: 0, at: 9 },
+      },
+    });
+    const fillNotes = notificationsFromLaps([openNoFill], [openFilled]);
+    expect(fillNotes.map((n) => n.kind)).toEqual(["FILL"]);
+    expect(fillNotes[0].lap).toBe(4);
+
+    const shielded = tapeLap({
+      number: 1,
+      outcome: "LOSS",
+      pnl: -0.6,
+      shielded: true,
+      streakAfter: 2,
+    });
+    const shieldNotes = notificationsFromLaps(
+      [tapeLap({ number: 1, outcome: "OPEN", pnl: Number.NaN })],
+      [shielded],
+    );
+    expect(shieldNotes.map((n) => n.kind)).toEqual(["SHIELD"]);
+    expect(shieldNotes[0].title).toMatch(/shield absorbed/i);
+  });
+});
+
+describe("notificationsFromLifecycle", () => {
+  it("emits a park note once when daily loss trips", () => {
+    const first = notificationsFromLifecycle({
+      prevError: "settlement_pending",
+      nextError: "daily_loss_exceeded",
+      prevState: "ERROR",
+      nextState: "PAUSED",
+      at: 1,
+    });
+    expect(first).toHaveLength(1);
+    expect(first[0].kind).toBe("INFO");
+    expect(first[0].title).toMatch(/stop-loss/i);
+    expect(
+      notificationsFromLifecycle({
+        prevError: "daily_loss_exceeded",
+        nextError: "daily_loss_exceeded",
+        prevState: "PAUSED",
+        nextState: "PAUSED",
+        at: 2,
+      }),
+    ).toEqual([]);
+  });
+
+  it("emits a re-arm note on the REARMING hop", () => {
+    const notes = notificationsFromLifecycle({
+      prevError: null,
+      nextError: null,
+      prevState: "REDEEMED",
+      nextState: "REARMING",
+      lapIndex: 2,
+      at: 3,
+    });
+    expect(notes).toHaveLength(1);
+    expect(notes[0].id).toBe("rearm-2");
+    expect(notes[0].title).toMatch(/re-armed/i);
   });
 });
 

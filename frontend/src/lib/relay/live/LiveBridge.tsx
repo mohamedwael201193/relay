@@ -38,6 +38,7 @@ import {
   bookSnapshotFromLive,
   notificationsFromBoosts,
   notificationsFromLaps,
+  notificationsFromLifecycle,
   relationshipsFromArenaBoosts,
   runnerFromRow,
   streakFromHistory,
@@ -221,11 +222,18 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     (!prev.lastResult ||
       prev.lastResult.lap !== builtResult!.lap ||
       prev.lastResult.outcome !== builtResult!.outcome);
-  const lapNotes = isNewResult ? notificationsFromLaps(prev.laps, mappedLaps) : [];
+  const lapNotes = notificationsFromLaps(prev.laps, mappedLaps);
   const mappedArena = arenaFromRows(arena.runners ?? [], vault);
   const mappedBoosts = relationshipsFromArenaBoosts(arena.boosts ?? [], mappedArena);
   const boostNotes = notificationsFromBoosts(prev.boosts, mappedBoosts, vault);
-  const incomingNotes = [...boostNotes, ...lapNotes];
+  const lifeNotes = notificationsFromLifecycle({
+    prevError: prev.backendLastError,
+    nextError: row.last_error ?? null,
+    prevState: prev.backendState,
+    nextState: row.state,
+    lapIndex: row.lap_index,
+  });
+  const incomingNotes = [...boostNotes, ...lapNotes, ...lifeNotes];
   const liveLap = liveLapFromState({
     row,
     markets: marketsRows,

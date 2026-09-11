@@ -44,7 +44,6 @@ import { BoostDialog } from "./arena/boost-dialog";
 import { ShareCard } from "./arena/share-card";
 import {
   longestWinRange,
-  slugFor,
   synthTape,
   synthTicks,
   ticksFromLaps,
@@ -150,8 +149,8 @@ function AthleteCard({ entry }: { entry: ArenaRunner }) {
     const text = [
       `RELAY — ${entry.name} · ${entry.strategy}`,
       `7D PNL ${signed(entry.pnl7d)} · STREAK ×${entry.streak} · WIN RATE ${pct(entry.winRate)}`,
-      `${entry.laps} LAPS · ${entry.followers} FOLLOWERS`,
-      `relay.app/r/${slugFor(entry.name)} — every number verified on-chain`,
+      `${entry.laps} LAPS${entry.boosters ? ` · ${entry.boosters} BOOST` : ""}`,
+      `${typeof window !== "undefined" ? window.location.origin : "https://relay-silk-one.vercel.app"}/#/app/profile`,
     ].join("\n");
     try {
       await navigator.clipboard.writeText(text);
@@ -202,7 +201,7 @@ function AthleteCard({ entry }: { entry: ArenaRunner }) {
             <>FOLLOW BOOK</>
           )}
         </Chip>
-        <Chip>{isYou ? config.cadence.toUpperCase() : "15M"} CADENCE</Chip>
+        <Chip>{(isYou ? config.cadence : entry.cadence ?? "15m").toUpperCase()} CADENCE</Chip>
         {entry.verified && (
           <Chip className="border-lime/70 text-lime">
             <BadgeCheck className="h-3.5 w-3.5" aria-hidden /> VERIFIED
@@ -216,13 +215,15 @@ function AthleteCard({ entry }: { entry: ArenaRunner }) {
           label="7D PNL"
           value={signed(entry.pnl7d)}
           sub="VERIFIED FILLS"
-          tone={entry.pnl7d >= 0 ? "up" : "down"}
+          tone={Number.isFinite(entry.pnl7d) && entry.pnl7d >= 0 ? "up" : "down"}
         />
         <StatTile label="STREAK" value={`×${entry.streak}`} sub="CURRENT · LIVE" tone="flame" />
         <StatTile label="WIN RATE" value={pct(entry.winRate)} sub={`ON ${entry.laps} LAPS`} />
         <StatTile label="LAPS" value={entry.laps} sub="LIFETIME TAPE" />
         <StatTile label="BEST STREAK" value={`×${entry.bestStreak}`} sub="ALL-TIME" tone="flame" />
-        <StatTile label="FOLLOWERS" value={entry.followers} sub="PUBLIC WATCHERS" />
+        {!(isLiveMode() && entry.followers === 0) && (
+          <StatTile label="FOLLOWERS" value={entry.followers} sub="PUBLIC WATCHERS" />
+        )}
       </div>
 
       {/* boosters */}
@@ -233,17 +234,18 @@ function AthleteCard({ entry }: { entry: ArenaRunner }) {
         </span>
       </div>
 
-      {/* performance */}
-      <div className="mt-5">
-        <div className="mlabel text-foam/70">PERFORMANCE · LAST 12 LAPS</div>
-        <Sparkline
-          values={entry.spark}
-          width={560}
-          height={64}
-          className="mt-2 h-16 w-full"
-          strokeWidth={2.5}
-        />
-      </div>
+      {entry.spark.length > 0 ? (
+        <div className="mt-5">
+          <div className="mlabel text-foam/70">PERFORMANCE · LAST 12 LAPS</div>
+          <Sparkline
+            values={entry.spark}
+            width={560}
+            height={64}
+            className="mt-2 h-16 w-full"
+            strokeWidth={2.5}
+          />
+        </div>
+      ) : null}
 
       {/* CTAs */}
       {isYou ? (
@@ -448,8 +450,45 @@ function TapeRowItem({
 function StreakHistory({ entry }: { entry: ArenaRunner }) {
   const laps = useRelay((s) => s.laps);
   const isYou = !!entry.isYou;
+  const live = isLiveMode();
+  const [publicLaps, setPublicLaps] = useState<Lap[] | null>(null);
 
-  const ticks = isYou ? ticksFromLaps(laps, 18) : isLiveMode() ? [] : synthTicks(entry, 18);
+  useEffect(() => {
+    if (isYou || !live) {
+      setPublicLaps(null);
+      return;
+    }
+    let cancelled = false;
+    setPublicLaps(null);
+    void (async () => {
+      try {
+        const [history, proof] = await Promise.all([
+          relayApi.history(entry.runnerId),
+          relayApi.proof(entry.runnerId).catch(
+            () => ({ proof: { orders: [], settlements: [], records: [] } as ProofBundle }),
+          ),
+        ]);
+        if (cancelled) return;
+        setPublicLaps(
+          lapsFromHistory(
+            history.laps ?? [],
+            "proof" in proof ? proof.proof : { orders: [], settlements: [], records: [] },
+          ),
+        );
+      } catch {
+        if (!cancelled) setPublicLaps([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isYou, live, entry.runnerId]);
+
+  const ticks = isYou
+    ? ticksFromLaps(laps, 18)
+    : live
+      ? ticksFromLaps(publicLaps ?? [], 18)
+      : synthTicks(entry, 18);
   const longest = longestWinRange(ticks);
   const n = ticks.length;
   const wins = ticks.filter((t) => t === "W").length;
@@ -466,41 +505,51 @@ function StreakHistory({ entry }: { entry: ArenaRunner }) {
   return (
     <Panel label="STREAK HISTORY">
       <div className="px-5 pb-4 pt-3">
-        <div
-          role="img"
-          aria-label={`Last ${n} windows: ${wins} wins, ${losses} losses, ${voids} voids. Longest win run ×${longest.length}.`}
-          className="flex items-end gap-1.5"
-        >
-          {ticks.map((t, i) => (
-            <motion.span
-              key={i}
-              initial={{ scaleY: 0.3, opacity: 0 }}
-              animate={{ scaleY: 1, opacity: 1 }}
-              transition={{ delay: i * 0.012, duration: 0.18 }}
-              className={cn(
-                "h-7 flex-1 origin-bottom rounded-sm",
-                t === "W" ? "bg-lime" : t === "L" ? "bg-ember" : "bg-foam/25"
-              )}
-              aria-hidden
-            />
-          ))}
-        </div>
-        <div className="track-dash mt-2.5 text-foam/20" aria-hidden />
-
-        {longest.length >= 2 && (
-          <div className="relative mt-2 h-6">
-            <div
-              className="absolute h-2.5 rounded-b-md border-x-2 border-b-2 border-flame/70"
-              style={{ left: `${bracketLeft}%`, width: `${bracketWidth}%` }}
-              aria-hidden
-            />
-            <span
-              className="mlabel absolute -translate-x-1/2 whitespace-nowrap text-flame"
-              style={{ left: `${labelLeft}%` }}
-            >
-              LONGEST ×{longest.length}
+        {n === 0 ? (
+          <div className="py-6 text-center">
+            <span className="mlabel text-foam/60">
+              {live && !isYou && publicLaps == null ? "LOADING PUBLIC STREAK…" : "NO VERIFIED STREAK YET"}
             </span>
           </div>
+        ) : (
+          <>
+            <div
+              role="img"
+              aria-label={`Last ${n} windows: ${wins} wins, ${losses} losses, ${voids} voids. Longest win run ×${longest.length}.`}
+              className="flex items-end gap-1.5"
+            >
+              {ticks.map((t, i) => (
+                <motion.span
+                  key={i}
+                  initial={{ scaleY: 0.3, opacity: 0 }}
+                  animate={{ scaleY: 1, opacity: 1 }}
+                  transition={{ delay: i * 0.012, duration: 0.18 }}
+                  className={cn(
+                    "h-7 flex-1 origin-bottom rounded-sm",
+                    t === "W" ? "bg-lime" : t === "L" ? "bg-ember" : "bg-foam/25"
+                  )}
+                  aria-hidden
+                />
+              ))}
+            </div>
+            <div className="track-dash mt-2.5 text-foam/20" aria-hidden />
+
+            {longest.length >= 2 && (
+              <div className="relative mt-2 h-6">
+                <div
+                  className="absolute h-2.5 rounded-b-md border-x-2 border-b-2 border-flame/70"
+                  style={{ left: `${bracketLeft}%`, width: `${bracketWidth}%` }}
+                  aria-hidden
+                />
+                <span
+                  className="mlabel absolute -translate-x-1/2 whitespace-nowrap text-flame"
+                  style={{ left: `${labelLeft}%` }}
+                >
+                  LONGEST ×{longest.length}
+                </span>
+              </div>
+            )}
+          </>
         )}
 
         <div className="mt-3 flex items-center justify-between gap-3">
@@ -609,15 +658,18 @@ function RiskPolicy({ entry }: { entry: ArenaRunner }) {
 function FollowersRow({ entry }: { entry: ArenaRunner }) {
   const following = useRelay((s) => s.following);
   const isFollowing = following.includes(entry.runnerId);
+  const showFollowers = !(isLiveMode() && entry.followers === 0);
 
   return (
     <Panel>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4">
-        <span className="flex items-center gap-2.5">
-          <Users className="h-4 w-4 text-foam" aria-hidden />
-          <span className="data text-lg font-semibold leading-none">{entry.followers}</span>
-          <span className="mlabel text-foam/70">FOLLOWERS</span>
-        </span>
+        {showFollowers ? (
+          <span className="flex items-center gap-2.5">
+            <Users className="h-4 w-4 text-foam" aria-hidden />
+            <span className="data text-lg font-semibold leading-none">{entry.followers}</span>
+            <span className="mlabel text-foam/70">FOLLOWERS</span>
+          </span>
+        ) : null}
         <span className="flex items-center gap-2.5">
           <FlameMark className="h-4 w-4" aria-hidden />
           <span className="data text-lg font-semibold leading-none">{entry.boosters}</span>

@@ -508,18 +508,46 @@ export function impliedStartBankroll(vaultBal: number, laps: Lap[]): number {
   return Number.isFinite(start) && start > 0 ? start : vaultBal;
 }
 
-/** New settled laps since `prev`. OPEN fills are not results. Does not invent lastResult. */
+function fillHashLooksReal(hash: string | undefined): boolean {
+  return Boolean(hash && /^0x[0-9a-fA-F]{16,}$/.test(hash));
+}
+
+/** New fills and settled laps since `prev`. OPEN without a real fill is silent. Does not invent lastResult. */
 export function notificationsFromLaps(prev: Lap[], next: Lap[]): AppNotification[] {
   const prevByNumber = new Map(prev.map((l) => [l.number, l]));
   const out: AppNotification[] = [];
   for (const lap of next) {
-    if (lap.outcome === "OPEN") continue;
     const before = prevByNumber.get(lap.number);
+    if (lap.outcome === "OPEN") {
+      const filled = fillHashLooksReal(lap.fill?.tx?.hash);
+      const beforeFilled = fillHashLooksReal(before?.fill?.tx?.hash);
+      if (filled && !beforeFilled) {
+        const stakeBit = Number.isFinite(lap.stake) && lap.stake > 0 ? ` · $${lap.stake.toFixed(2)}` : "";
+        out.push({
+          id: `lap-${lap.number}-FILL`,
+          kind: "FILL",
+          title: `Lap ${lap.number} filled${stakeBit}`,
+          body: `${lap.market.asset} ${lap.side} · waiting on the window.`,
+          at: lap.fill?.filledAt || lap.order?.placedAt || 0,
+          read: false,
+          lap: lap.number,
+        });
+      }
+      continue;
+    }
     if (before && before.outcome === lap.outcome) continue;
     const kind: AppNotification["kind"] =
-      lap.outcome === "WIN" ? "WIN" : lap.outcome === "LOSS" ? "LOSS" : "VOID";
+      lap.outcome === "WIN"
+        ? "WIN"
+        : lap.outcome === "VOID"
+          ? "VOID"
+          : lap.shielded
+            ? "SHIELD"
+            : "LOSS";
     const sign = lap.pnl > 0 ? "+" : lap.pnl < 0 ? "−" : "";
-    const pnlBit = lap.pnl !== 0 ? ` — ${sign}$${Math.abs(lap.pnl).toFixed(2)}` : "";
+    const pnlBit =
+      Number.isFinite(lap.pnl) && lap.pnl !== 0 ? ` — ${sign}$${Math.abs(lap.pnl).toFixed(2)}` : "";
+    const streakBit = lap.streakAfter > 1 ? ` · streak ×${lap.streakAfter}` : "";
     out.push({
       id: `lap-${lap.number}-${kind}`,
       kind,
@@ -527,19 +555,55 @@ export function notificationsFromLaps(prev: Lap[], next: Lap[]): AppNotification
         kind === "VOID"
           ? `Lap ${lap.number} voided — stake returned`
           : kind === "WIN"
-            ? `Lap ${lap.number} complete${pnlBit}`
-            : lap.shielded
+            ? `Lap ${lap.number} complete${pnlBit}${streakBit}`
+            : kind === "SHIELD"
               ? `Lap ${lap.number} shield absorbed the loss${pnlBit}`
               : `Lap ${lap.number} resolved against you${pnlBit}`,
       body:
         kind === "VOID"
           ? "Stake returned. Streak preserved."
-          : lap.shielded
-            ? `${lap.market.asset} · streak ×${lap.streakAfter} held.`
-            : `${lap.market.asset} · streak ×${lap.streakAfter}.`,
+          : kind === "WIN"
+            ? `${lap.market.asset} · streak ×${lap.streakAfter}. Re-armed for the next window.`
+            : lap.shielded
+              ? `${lap.market.asset} · streak ×${lap.streakAfter} held.`
+              : `${lap.market.asset} · streak ×${lap.streakAfter}.`,
       at: lap.settledAt || 0,
       read: false,
       lap: lap.number,
+    });
+  }
+  return out;
+}
+
+/** Park / re-arm from backend state. Ids are stable so polls do not re-spam. */
+export function notificationsFromLifecycle(opts: {
+  prevError: string | null;
+  nextError: string | null;
+  prevState: string | null;
+  nextState: string;
+  lapIndex?: number;
+  at?: number;
+}): AppNotification[] {
+  const out: AppNotification[] = [];
+  const at = opts.at ?? Date.now();
+  if (opts.nextError === "daily_loss_exceeded" && opts.prevError !== "daily_loss_exceeded") {
+    out.push({
+      id: "park-daily-loss",
+      kind: "INFO",
+      title: "Parked at daily stop-loss",
+      body: "On-chain realized loss hit maxDailyLoss. The runner waits for the next UTC day.",
+      at,
+      read: false,
+    });
+  }
+  if (opts.nextState === "REARMING" && opts.prevState !== "REARMING") {
+    out.push({
+      id: `rearm-${opts.lapIndex ?? 0}`,
+      kind: "INFO",
+      title: "Re-armed for the next window",
+      body: "Looking for the next matching Shannon book.",
+      at,
+      read: false,
     });
   }
   return out;

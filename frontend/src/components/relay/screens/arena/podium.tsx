@@ -15,6 +15,7 @@ import { pct, signed } from "@/lib/relay/format";
 import type { ArenaRunner } from "@/lib/relay/types";
 import { cn } from "@/lib/utils";
 import { FlameMark, RunnerGlyph } from "../../identity/identity";
+import { isLiveMode } from "@/lib/relay/live/mode";
 
 const MEDAL: Record<number, string> = {
   1: "bg-lime text-graphite",
@@ -93,7 +94,7 @@ export function Podium({ runners }: { runners: ArenaRunner[] }) {
                 transition={{ duration: 0.25 }}
                 className={cn(
                   "data text-2xl font-semibold leading-none",
-                  r.pnl7d >= 0 ? "text-lime" : "text-ember"
+                  Number.isFinite(r.pnl7d) && r.pnl7d >= 0 ? "text-lime" : "text-ember"
                 )}
               >
                 {signed(r.pnl7d)}
@@ -105,7 +106,9 @@ export function Podium({ runners }: { runners: ArenaRunner[] }) {
           <div className="mt-4 flex items-center justify-between border-t-2 border-lined pt-3">
             <span className="data text-xs text-foam">{pct(r.winRate, 0)} WIN</span>
             <span className="data text-xs text-foam">
-              {r.followers} FOLLOW · {r.boosters} BOOST
+              {isLiveMode() && r.followers === 0
+                ? `${r.boosters} BOOST`
+                : `${r.followers} FOLLOW · ${r.boosters} BOOST`}
             </span>
           </div>
 

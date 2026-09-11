@@ -12,10 +12,10 @@ import { Sparkline } from "../../core/primitives";
 import { pct, signed } from "@/lib/relay/format";
 import type { ArenaRunner } from "@/lib/relay/types";
 import { cn } from "@/lib/utils";
-import { slugFor } from "./synth";
 
 export function ShareCard({ entry }: { entry: ArenaRunner }) {
-  const slug = slugFor(entry.name);
+  const host =
+    typeof window !== "undefined" ? window.location.host : "relay-silk-one.vercel.app";
 
   return (
     <div
@@ -61,7 +61,7 @@ export function ShareCard({ entry }: { entry: ArenaRunner }) {
           <div
             className={cn(
               "data text-3xl font-semibold leading-none sm:text-4xl",
-              entry.pnl7d >= 0 ? "text-lime" : "text-ember"
+              Number.isFinite(entry.pnl7d) && entry.pnl7d >= 0 ? "text-lime" : "text-ember"
             )}
           >
             {signed(entry.pnl7d)}
@@ -69,24 +69,26 @@ export function ShareCard({ entry }: { entry: ArenaRunner }) {
         </div>
       </div>
 
-      {/* performance trail */}
-      <div className="mt-4">
-        <Sparkline
-          values={entry.spark}
-          width={560}
-          height={44}
-          className="h-11 w-full"
-          strokeWidth={2.5}
-        />
-      </div>
+      {/* performance trail — only when the tape produced a spark */}
+      {entry.spark.length > 0 ? (
+        <div className="mt-4">
+          <Sparkline
+            values={entry.spark}
+            width={560}
+            height={44}
+            className="h-11 w-full"
+            strokeWidth={2.5}
+          />
+        </div>
+      ) : null}
 
       {/* verification footer */}
       <div className="mt-4 flex items-end justify-between gap-3">
         <VerifiedSeal size={44} />
         <div className="flex min-w-0 flex-col items-end gap-1">
-          <span className="data truncate text-xs text-foam">relay.app/r/{slug}</span>
+          <span className="data truncate text-xs text-foam">{host}</span>
           <span className="mlabel whitespace-nowrap text-foam/60">
-            EVERY NUMBER VERIFIED ON-CHAIN
+            NUMBERS FROM VERIFIED FILLS
           </span>
         </div>
       </div>
