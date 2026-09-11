@@ -12,6 +12,7 @@ id_ed25519
 
 # Local-only planning, history, research (never push except README.md)
 HISTORY.md
+DETAILS.md
 RELAY-*.md
 01-*.md
 02-*.md
