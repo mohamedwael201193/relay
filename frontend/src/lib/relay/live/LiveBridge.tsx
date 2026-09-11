@@ -217,11 +217,10 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
   const lastSettled = [...mappedLaps].reverse().find((l) => l.outcome !== "OPEN");
   const builtResult = lastSettled ? resultFromLap(lastSettled, vaultBal) : null;
   const prev = useRelay.getState();
-  const isNewResult =
-    Boolean(builtResult) &&
-    (!prev.lastResult ||
-      prev.lastResult.lap !== builtResult!.lap ||
-      prev.lastResult.outcome !== builtResult!.outcome);
+  const isNewResult = Boolean(
+    builtResult &&
+      prev.laps.some((l) => l.number === builtResult.lap && l.outcome === "OPEN"),
+  );
   const lapNotes = notificationsFromLaps(prev.laps, mappedLaps);
   const mappedArena = arenaFromRows(arena.runners ?? [], vault);
   const mappedBoosts = relationshipsFromArenaBoosts(arena.boosts ?? [], mappedArena);

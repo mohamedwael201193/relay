@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assetFromMarket, bookSnapshotFromLive, impliedStartBankroll, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromBoosts, notificationsFromLaps, notificationsFromLifecycle, relationshipsFromArenaBoosts, sideFromKind, streakFromHistory } from "./apply";
-import type { HistoryLap, LiveMarketRow, ProofBundle } from "../api/client";
+import { arenaFromRows, assetFromMarket, bookSnapshotFromLive, impliedStartBankroll, lapsFromHistory, liveFeedPrice, liveLapFromState, notificationsFromBoosts, notificationsFromLaps, notificationsFromLifecycle, relationshipsFromArenaBoosts, sideFromKind, streakFromHistory } from "./apply";
+import type { ArenaRow, HistoryLap, LiveMarketRow, ProofBundle } from "../api/client";
 import type { Lap } from "../types";
 
 describe("streakFromHistory", () => {
@@ -616,5 +616,26 @@ describe("relationshipsFromArenaBoosts", () => {
     expect(notificationsFromBoosts([], next, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toHaveLength(1);
     expect(notificationsFromBoosts(next, next, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toEqual([]);
     expect(notificationsFromBoosts([], next, "0xdddddddddddddddddddddddddddddddddddddddd")).toEqual([]);
+  });
+});
+
+describe("arenaFromRows", () => {
+  it("marks a daily-loss ERROR vault paused, not running", () => {
+    const row: ArenaRow = {
+      vault: "0x056f9caf7150f427989e7166f42bf87fca9349ba",
+      owner: "0xf76e6B0920e9332fF4410f6dD53F01722AbC71a3",
+      state: "ERROR",
+      verified_laps: 9,
+      win_rate: 0.444,
+      pnl_raw: "-4542823",
+      pnl_7d_raw: "-4542823",
+      streak: 1,
+      best_streak: 2,
+      interval_sec: "900",
+      boosters: 1,
+    };
+    const [entry] = arenaFromRows([row], row.vault);
+    expect(entry.status).toBe("PAUSED");
+    expect(entry.followers).toBe(0);
   });
 });

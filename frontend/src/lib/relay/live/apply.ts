@@ -89,7 +89,10 @@ export function arenaFromRows(rows: ArenaRow[], myVault: string | null): ArenaRu
       laps,
       followers: 0,
       boosters: Number(r.boosters) || 0,
-      status: r.state === "PAUSED" ? "PAUSED" : "RUNNING",
+      status:
+        r.state === "PAUSED" || r.state === "ERROR" || r.state === "STOPPED"
+          ? "PAUSED"
+          : "RUNNING",
       delta: 0,
       verified: laps > 0,
       isYou: myVault ? r.vault.toLowerCase() === myVault.toLowerCase() : false,
