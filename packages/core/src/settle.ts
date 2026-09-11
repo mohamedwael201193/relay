@@ -36,6 +36,10 @@ type SettleTx = { name: string; hash: string; status: string };
 
 const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
 
+const lapSettledEvent = parseAbiItem(
+  "event LapSettled(bytes32 indexed marketId, uint256 questionId, bool voided, uint8 winningOutcome, bool fromCallback)",
+);
+
 /** Chain tx that proves settle/claim. Losses often skip redeemPosition (0 payout). */
 export function settlementProofHash(opts: {
   redeemTx?: string | null;
@@ -50,6 +54,31 @@ export function settlementProofHash(opts: {
     [...(opts.pokeAndSyncTxs ?? [])].reverse().map((t) => hex(t.hash)).find(Boolean) ??
     null
   );
+}
+
+/** Read-only: LapSettled tx for a market. Used to backfill 0-payout losses that skipped redeem. */
+export async function readLapSettledProofTx(
+  vault: Address,
+  marketId: Hex,
+  lookbackBlocks = 16_000n,
+): Promise<Hex | null> {
+  const client = shannonHttpClient();
+  try {
+    const latest = await client.getBlockNumber();
+    const fromBlock = latest > lookbackBlocks ? latest - lookbackBlocks : 0n;
+    const logs = await client.getLogs({
+      address: vault,
+      event: lapSettledEvent,
+      args: { marketId },
+      fromBlock,
+      toBlock: latest,
+    });
+    const hit = logs.find((l) => Boolean(l.args.fromCallback)) ?? logs.at(-1);
+    const hash = hit?.transactionHash;
+    return hash && TX_HASH.test(hash) ? hash : null;
+  } catch {
+    return null;
+  }
 }
 
 async function trySend(
@@ -237,27 +266,11 @@ export async function settleFilledMarket(
       syncVaultTx = sv.transactionHash;
       txs.push({ name: "syncResolution", hash: sv.transactionHash, status: sv.status });
     } else {
-      const lapSettledEvent = parseAbiItem(
-        "event LapSettled(bytes32 indexed marketId, uint256 questionId, bool voided, uint8 winningOutcome, bool fromCallback)",
-      );
-      try {
-        const latest = await client.getBlockNumber();
-        const fromBlock = latest > 8_000n ? latest - 8_000n : 0n;
-        const logs = await client.getLogs({
-          address: vault,
-          event: lapSettledEvent,
-          args: { marketId },
-          fromBlock,
-          toBlock: latest,
-        });
-        const hit = logs.find((l) => Boolean(l.args.fromCallback)) ?? logs.at(-1);
-        if (hit) {
-          syncVaultTx = hit.transactionHash;
-          txs.push({ name: "LapSettled", hash: hit.transactionHash, status: "success" });
-        } else {
-          txs.push({ name: "syncResolution", hash: "skipped_reactivity", status: "success" });
-        }
-      } catch {
+      const found = await readLapSettledProofTx(vault, marketId);
+      if (found) {
+        syncVaultTx = found;
+        txs.push({ name: "LapSettled", hash: found, status: "success" });
+      } else {
         txs.push({ name: "syncResolution", hash: "skipped_reactivity", status: "success" });
       }
     }

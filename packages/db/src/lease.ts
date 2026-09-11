@@ -223,6 +223,30 @@ export async function listProof(runnerId: string) {
   });
 }
 
+const SETTLEMENT_TX = /^0x[0-9a-fA-F]{64}$/;
+
+/** Fill a missing settle/claim hash without rewriting lap state. */
+export async function patchSettlementProofTx(
+  runnerId: string,
+  lapIndex: number,
+  redeemTx: string,
+): Promise<boolean> {
+  if (!SETTLEMENT_TX.test(redeemTx)) return false;
+  return withPool(async (c) => {
+    const r = await c.query(
+      `UPDATE settlements s
+       SET redeem_tx = $3
+       FROM laps l
+       WHERE s.lap_id = l.id
+         AND l.runner_id = $1
+         AND l.lap_index = $2
+         AND (s.redeem_tx IS NULL OR s.redeem_tx !~ '^0x[0-9a-fA-F]{64}$')`,
+      [runnerId, lapIndex, redeemTx],
+    );
+    return (r.rowCount ?? 0) > 0;
+  });
+}
+
 export async function persistWorkerStep(input: {
   runnerId: string;
   vault: string;

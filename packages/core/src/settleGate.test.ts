@@ -3,6 +3,7 @@ import {
   derivedPnlRaw,
   filledOrderNeedsSettle,
   settlementIsFinal,
+  settlementsMissingProofTx,
   shouldWaitForReactivity,
   voidExpiredIsCallable,
 } from "./settleGate.js";
@@ -58,6 +59,21 @@ describe("filledOrderNeedsSettle", () => {
         { market_id: "0xa", resolved: true, voided: false },
       ),
     ).toBe(true);
+  });
+});
+
+describe("settlementsMissingProofTx", () => {
+  const proof = "0x" + "ab".repeat(32);
+
+  it("keeps final rows without a hash and caps the lookback", () => {
+    const rows = [
+      { market_id: "0xa", resolved: true, redeem_tx: null, lap_index: 11 },
+      { market_id: "0xb", resolved: true, redeem_tx: proof, lap_index: 12 },
+      { market_id: "0xc", resolved: false, voided: false, redeem_tx: null, lap_index: 13 },
+      { market_id: "0xd", resolved: true, redeem_tx: null, lap_index: 14 },
+    ];
+    expect(settlementsMissingProofTx(rows, 1).map((r) => r.lap_index)).toEqual([14]);
+    expect(settlementsMissingProofTx(rows).map((r) => r.market_id)).toEqual(["0xa", "0xd"]);
   });
 });
 

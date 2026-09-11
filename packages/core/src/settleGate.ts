@@ -32,6 +32,17 @@ export function settlementIsFinal(row: SettleRowRef | null | undefined): boolean
   return truthyFlag(row.resolved) || truthyFlag(row.voided);
 }
 
+/** Final settlement rows that never stored a chain hash (typical 0-payout loss). */
+export function settlementsMissingProofTx<T extends SettleRowRef>(
+  rows: T[] | null | undefined,
+  limit = 8,
+): T[] {
+  if (!rows?.length) return [];
+  return rows
+    .filter((s) => Boolean(s.market_id) && settlementIsFinal(s) && !settlementHasProofTx(s))
+    .slice(-limit);
+}
+
 /**
  * True when the latest order filled and there is no final settlement for that market.
  * An unresolved settlement row must not skip redeem — that was dropping PnL and

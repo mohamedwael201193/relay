@@ -49,11 +49,17 @@ export {
 export { canonicalOracleQuestionId, oracleQuestionUrl, settlementOracleQuestionId } from "./marketIdentity.js";
 export { runReactivityProbe } from "./reactivityProbe.js";
 export { runGoldE2e } from "./goldE2e.js";
-export { settleFilledMarket, settleFilledMarketFromKey, settlementProofHash } from "./settle.js";
+export {
+  settleFilledMarket,
+  settleFilledMarketFromKey,
+  settlementProofHash,
+  readLapSettledProofTx,
+} from "./settle.js";
 export {
   filledOrderNeedsSettle,
   settlementIsFinal,
   settlementHasProofTx,
+  settlementsMissingProofTx,
   derivedPnlRaw,
   voidExpiredIsCallable,
   shouldWaitForReactivity,

@@ -3,6 +3,8 @@ import {
   collateralCostForKind,
   filledOrderNeedsSettle,
   marketOracleMeta,
+  readLapSettledProofTx,
+  settlementsMissingProofTx,
   policyStakeRaw,
   readVaultSnapshot,
   refillVaultShield,
@@ -23,6 +25,7 @@ import {
   listLaps,
   listProof,
   persistWorkerStep,
+  patchSettlementProofTx,
   releaseRunner,
   setRunnerState,
 } from "@relay/db";
@@ -152,6 +155,36 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     const lastSettle = proof.settlements.at(-1) as
       | { market_id: string; redeem_tx: string | null; resolved?: boolean; voided?: boolean }
       | undefined;
+
+    const missingProof = settlementsMissingProofTx(
+      proof.settlements as Array<{
+        market_id: string;
+        redeem_tx: string | null;
+        resolved?: boolean;
+        voided?: boolean;
+        lap_index: number;
+      }>,
+    );
+    for (const row of missingProof) {
+      try {
+        const hash = await readLapSettledProofTx(vault, row.market_id as Hex);
+        if (!hash) continue;
+        const patched = await patchSettlementProofTx(runner.id, Number(row.lap_index), hash);
+        log("settlement_proof_backfill", {
+          runnerId: runner.id,
+          lapIndex: row.lap_index,
+          marketId: row.market_id,
+          redeemTx: hash,
+          patched,
+        });
+      } catch (e) {
+        log("settlement_proof_backfill_failed", {
+          runnerId: runner.id,
+          lapIndex: row.lap_index,
+          message: (e as Error).message.slice(0, 200),
+        });
+      }
+    }
 
     const needsSettle = filledOrderNeedsSettle(lastOrder, lastSettle);
 

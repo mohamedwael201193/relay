@@ -13,6 +13,7 @@ export {
   listBoostCounts,
   listRecentBoosts,
   persistWorkerStep,
+  patchSettlementProofTx,
   releaseRunner,
   setRunnerState,
   updateRunnerPolicy,
