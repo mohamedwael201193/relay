@@ -389,6 +389,11 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     const msg = (e as Error).message;
     const daily =
       msg.includes("DailyLossExceeded") || /realizedLossToday/.test(msg);
+    if (msg.includes("no live Trading market")) {
+      await go("DISCOVERING", { lastError: "waiting_book" });
+      log("waiting_book", { runnerId: runner.id, error: msg.slice(0, 200) });
+      return { action: "waiting_book", runnerId: runner.id };
+    }
     await go("ERROR", { lastError: (daily ? "daily_loss_exceeded" : msg).slice(0, 500) });
     log("error", { runnerId: runner.id, error: msg, parked: daily });
     return { action: daily ? "parked_daily_loss" : "error", runnerId: runner.id };
