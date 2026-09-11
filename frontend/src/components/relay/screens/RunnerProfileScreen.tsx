@@ -6,7 +6,7 @@
  * performance, boost/follow CTAs), the screenshot-ready share card,
  * the public lap tape, streak history and risk policy.
  * Your own runner doubles as your public card (real laps, real config);
- * other runners load public history + proof. Boost is not live.
+ * other runners load public history + proof. Boost deploys an independent child vault.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -577,6 +577,31 @@ function RiskPolicy({ entry }: { entry: ArenaRunner }) {
   const config = useRelay((s) => s.config);
   const streakState = useRelay((s) => s.streak);
   const isYou = !!entry.isYou;
+  const [publicShielded, setPublicShielded] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (isYou || !isLiveMode()) {
+      setPublicShielded(null);
+      return;
+    }
+    let cancelled = false;
+    void relayApi
+      .history(entry.runnerId)
+      .then((history) => {
+        if (cancelled) return;
+        const hit = (history.laps ?? []).some((l) => {
+          const s = l.shielded as boolean | string | null | undefined;
+          return s === true || s === "t" || s === "true";
+        });
+        setPublicShielded(hit);
+      })
+      .catch(() => {
+        if (!cancelled) setPublicShielded(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isYou, entry.runnerId]);
 
   const rows = isYou
     ? [
@@ -618,7 +643,12 @@ function RiskPolicy({ entry }: { entry: ArenaRunner }) {
         {
           icon: <ShieldMark className="h-5 w-5" aria-hidden />,
           label: "SHIELDS",
-          value: "Not on-chain — streak is verified wins only",
+          value:
+            publicShielded == null
+              ? "Reading shield state from the public tape…"
+              : publicShielded
+                ? "On-chain — a shielded loss kept the streak"
+                : "No shielded loss on this public tape",
         },
         {
           icon: <Timer className="h-4 w-4 text-foam" aria-hidden />,

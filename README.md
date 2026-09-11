@@ -108,6 +108,19 @@ In-app Alerts hydrate from those same laps. Optional Telegram: set `TELEGRAM_BOT
 
 Pinned `@somnia-chain/markets-sdk@0.29.0` and `@somnia-chain/reactivity@0.2.1`. Live books come from the indexer + `getBinaryOrderBook`. Settlement prefers Reactivity `LapSettled` `fromCallback=true` on the vault; `syncResolution` is the worker backstop after one wait tick. tUSDC is 6 decimals. Do not enable `MAINNET_TRADING_ENABLED`.
 
+SDK / docs feedback from this Shannon build (items that cost real laps):
+
+1. **`PostOnlyWouldCross` is normal, not a fault.** Treat it as the book moving into the bid; fall back to IOC. Thin 15m books often return fill class `UNKNOWN` — those attempts are not streak laps.
+2. **Shannon tUSDC is 6 decimals.** Never hardcode 18. Mainnet USDso is 18 and stays gated off.
+3. **`getBinaryOrderBook` can be empty.** `mintSet` is the dead-book counterparty; do not fake a ladder.
+4. **`listLiveBinaryMarkets` is not a cadence gate.** Still call `getMarketOnchain` (`status==1`) and refuse a 60s book for a 900s runner.
+5. **Winning side is `payoutNumerators` / `LapSettled.winningOutcome`.** There is no `winningOutcome()` getter.
+6. **Somnia CREATE costs 3125 gas/byte.** Older RunnerVault bytecode (10107 bytes) has no `setShieldsMax`; newer 13416-byte vaults charge shields on-chain. Simulate before asking the owner to sign.
+7. **ERC-6909 redeem needs the markets module as operator.** New vaults grant it on place/redeem; older vaults need a one-time owner `AUTHORIZE SETTLEMENT`.
+8. **`expireTimestampNs` must equal market expiry** — that is the protocol dead-man switch.
+9. **Indexer `countBinaryMarketsBounded` caps at 10,000.** Do not publish an uncapped market count as a KPI.
+10. **Reactivity is primary, not exclusive.** `fromCallback=true` is proven on owned vaults; the worker still claims `settlement_pending` so one busy runner cannot starve another. Do not claim a keeper-free product if the operator process is down.
+
 ## Layout
 
 ```
