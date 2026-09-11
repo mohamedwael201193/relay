@@ -6,6 +6,7 @@
  * runs, with an orbiting baton carrying the position toward settlement.
  */
 
+import { useId } from "react";
 import { cn } from "@/lib/utils";
 import type { LapPhase, Side } from "@/lib/relay/types";
 import { AssetIcon } from "../identity/identity";
@@ -67,6 +68,7 @@ export function LapRing({
   const track = dark ? "#3a3320" : "#d9d2bb";
   const inkText = dark ? "#f3efdd" : "#1a1610";
   const sub = dark ? "#b3a98f" : "#6b6250";
+  const glowId = `batonGlow${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
 
   return (
     <div
@@ -77,7 +79,7 @@ export function LapRing({
     >
       <svg viewBox="0 0 300 300" className="absolute inset-0 h-full w-full">
         <defs>
-          <filter id="batonGlow" x="-60%" y="-60%" width="220%" height="220%">
+          <filter id={glowId} x="-60%" y="-60%" width="220%" height="220%">
             <feGaussianBlur stdDeviation="5" result="b" />
             <feMerge>
               <feMergeNode in="b" />
@@ -156,7 +158,7 @@ export function LapRing({
           style={{ transition: "transform 260ms linear" }}
         >
           <g transform={`translate(150 ${150 - R})`}>
-            <g filter="url(#batonGlow)">
+            <g filter={`url(#${glowId})`}>
               <g transform="rotate(90)">
                 <rect
                   x={compact ? -11 : -13}
