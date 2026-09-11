@@ -78,6 +78,7 @@ pnpm render:deploy     # create Free web service via Render API (worker optional
 pnpm test
 pnpm typecheck
 pnpm check:frontend-mocks
+pnpm verify 0x056f9caf7150f427989e7166f42bf87fca9349ba
 pnpm isolation:owners   # local API: Wallet B cannot start/stop/pause Wallet A's vault
 pnpm owner:lifecycle    # provision/deposit/kill/withdraw a second-owner vault; does not touch ops
 forge test

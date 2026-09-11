@@ -42,7 +42,8 @@
     "test:watch": "vitest",
     "check:frontend-mocks": "node scripts/check-frontend-mocks.mjs",
     "isolation:owners": "tsx scripts/owner-isolation.ts",
-    "owner:lifecycle": "tsx scripts/owner-lifecycle.ts"
+    "owner:lifecycle": "tsx scripts/owner-lifecycle.ts",
+    "verify": "tsx scripts/relay-verify.ts"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

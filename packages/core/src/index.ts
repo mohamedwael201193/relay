@@ -76,4 +76,5 @@ export {
   type RunnerAnalytics,
   type ArenaAggRow,
 } from "./analytics.js";
+export { verifyTape, type TapeVerifyRow, type TapeVerifyReport } from "./verifyTape.js";
 export { canTransition, assertTransition, shortestPath, RUNNER_STATES, type RunnerState } from "./state.js";
