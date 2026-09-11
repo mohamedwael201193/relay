@@ -22,22 +22,11 @@ import {
 import { useRelay } from "@/lib/relay/engine/store";
 import { money } from "@/lib/relay/format";
 import type { ArenaRunner } from "@/lib/relay/types";
+import { boostLabel } from "@/lib/relay/live/boostLabel";
 import { cn } from "@/lib/utils";
 import { AssetIcon, FlameMark } from "../../identity/identity";
 
 const AMOUNTS = [10, 25, 50];
-
-function boostLabel(status: string | undefined, label: string | undefined, failed: boolean, complete: boolean): string {
-  if (complete) return "BOOST COMPLETE";
-  if (failed) return "BOOST FAILED";
-  if (status === "waiting" || status === "signing") return "SIGNATURE REQUIRED";
-  if (status === "submitting" && /provision|creat/i.test(label ?? "")) return "PROVISIONING";
-  if (status === "submitting") return "SIGNATURE ACCEPTED";
-  if (status === "confirming") return "ON-CHAIN CONFIRMING";
-  if (status === "confirmed") return "VERIFYING CHILD";
-  if (label) return label.toUpperCase();
-  return "BOOST PENDING";
-}
 
 export function BoostDialog({
   entry,

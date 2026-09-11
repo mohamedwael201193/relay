@@ -26,19 +26,29 @@ describe("filledOrderNeedsSettle", () => {
     ).toBe(true);
   });
 
-  it("is false after a resolved or voided settlement on the same market", () => {
+  it("is false after a resolved or voided settlement on the same market with a proof tx", () => {
+    const proof = "0x" + "ab".repeat(32);
     expect(
       filledOrderNeedsSettle(
         { fill_class: "PARTIAL_FILL", market_id: "0xa" },
-        { market_id: "0xa", resolved: true, voided: false },
+        { market_id: "0xa", resolved: true, voided: false, redeem_tx: proof },
       ),
     ).toBe(false);
     expect(
       filledOrderNeedsSettle(
         { fill_class: "FILL", market_id: "0xa" },
-        { market_id: "0xa", resolved: false, voided: true },
+        { market_id: "0xa", resolved: false, voided: true, redeem_tx: proof },
       ),
     ).toBe(false);
+  });
+
+  it("retries when the market is final but the claim/settle hash was never stored", () => {
+    expect(
+      filledOrderNeedsSettle(
+        { fill_class: "FILL", market_id: "0xa" },
+        { market_id: "0xa", resolved: true, voided: false, redeem_tx: null },
+      ),
+    ).toBe(true);
   });
 
   it("is true when the last settlement belongs to a different market", () => {

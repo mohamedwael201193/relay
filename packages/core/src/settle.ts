@@ -34,6 +34,24 @@ const marketAbi = parseAbi([
 
 type SettleTx = { name: string; hash: string; status: string };
 
+const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
+
+/** Chain tx that proves settle/claim. Losses often skip redeemPosition (0 payout). */
+export function settlementProofHash(opts: {
+  redeemTx?: string | null;
+  syncVaultTx?: string | null;
+  pokeAndSyncTxs?: { hash: string }[];
+}): Hex | null {
+  const hex = (h: string | null | undefined): Hex | null =>
+    h && TX_HASH.test(h) ? (h as Hex) : null;
+  return (
+    hex(opts.redeemTx) ??
+    hex(opts.syncVaultTx) ??
+    [...(opts.pokeAndSyncTxs ?? [])].reverse().map((t) => hex(t.hash)).find(Boolean) ??
+    null
+  );
+}
+
 async function trySend(
   account: LocalAccount,
   name: string,
@@ -224,7 +242,7 @@ export async function settleFilledMarket(
       );
       try {
         const latest = await client.getBlockNumber();
-        const fromBlock = latest > 999n ? latest - 999n : 0n;
+        const fromBlock = latest > 8_000n ? latest - 8_000n : 0n;
         const logs = await client.getLogs({
           address: vault,
           event: lapSettledEvent,
@@ -328,11 +346,12 @@ export async function settleFilledMarket(
     if (mustRedeem && !redeemed) needsOutcomeApproval = !moduleApproved;
 
     const vaultColAfter = await erc20Balance(client, COLLATERAL, vault);
+    const proofTx = settlementProofHash({ redeemTx, syncVaultTx, pokeAndSyncTxs: txs });
     const evidence = {
       ...base,
       vaultCollateralAfter: vaultColAfter.toString(),
       syncVaultTx,
-      redeemTx,
+      redeemTx: proofTx ?? redeemTx,
       redeemed,
       needsOutcomeApproval,
       waitingReactivity: false,

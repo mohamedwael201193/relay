@@ -29,7 +29,8 @@ export function useFlash(value: number): "up" | "down" | null {
     dir: null,
   });
 
-  if (value !== state.prev) {
+  /* Object.is so NaN (unsettled PnL) does not re-set every paint — `NaN !== NaN`. */
+  if (!Object.is(value, state.prev)) {
     setState({ prev: value, dir: value > state.prev ? "up" : "down" });
   }
 

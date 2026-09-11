@@ -9,7 +9,15 @@ export type SettleRowRef = {
   market_id?: string | null;
   resolved?: boolean | string | null;
   voided?: boolean | string | null;
+  redeem_tx?: string | null;
 };
+
+const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
+
+export function settlementHasProofTx(row: SettleRowRef | null | undefined): boolean {
+  const tx = row?.redeem_tx ?? "";
+  return TX_HASH.test(tx);
+}
 
 function isFilled(fillClass: string | null | undefined): boolean {
   return fillClass === "FILL" || fillClass === "PARTIAL_FILL";
@@ -37,7 +45,8 @@ export function filledOrderNeedsSettle(
   const market = (lastOrder.market_id ?? "").toLowerCase();
   if (!market) return false;
   if (!lastSettle || (lastSettle.market_id ?? "").toLowerCase() !== market) return true;
-  return !settlementIsFinal(lastSettle);
+  if (!settlementIsFinal(lastSettle)) return true;
+  return !settlementHasProofTx(lastSettle);
 }
 
 /** `BinaryMarket.voidExpired()` opens at expiry + settlementWindow (SDK + DreamDEX docs). */
