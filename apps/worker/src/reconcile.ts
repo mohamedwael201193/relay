@@ -9,6 +9,8 @@ import {
   registerMarketSubscription,
   runDoctor,
   runLiveOrder,
+  sendTelegram,
+  telegramLapText,
   settleFilledMarket,
   protocolChecksFailed,
   shortestPath,
@@ -285,6 +287,23 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
         fromCallback: Boolean(settlement.fromCallback),
         syncVaultTx: settlement.syncVaultTx,
       });
+      const pnlRaw =
+        entryCost != null ? (BigInt(redeemValue) - BigInt(entryCost)).toString() : null;
+      void sendTelegram(
+        telegramLapText({
+          vault,
+          lapIndex: lastOrder.lap_index,
+          state: nextState,
+          pnlRaw,
+          shielded,
+          intervalSec: runner.interval_sec,
+          fillTx: lastOrder.tx_hash,
+          redeemTx: settlement.redeemTx ?? settlement.syncVaultTx,
+          fromCallback: Boolean(settlement.fromCallback),
+        }),
+      ).catch((e) =>
+        log("telegram_failed", { message: (e as Error).message.slice(0, 200) }),
+      );
       snap = await readVaultSnapshot(vault);
       if (snap.killed) {
         await go("KILLED", { lastError: "vault killed on-chain" });

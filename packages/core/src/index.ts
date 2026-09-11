@@ -77,4 +77,5 @@ export {
   type ArenaAggRow,
 } from "./analytics.js";
 export { verifyTape, type TapeVerifyRow, type TapeVerifyReport } from "./verifyTape.js";
+export { telegramLapText, sendTelegram, type TelegramLapNotice } from "./telegram.js";
 export { canTransition, assertTransition, shortestPath, RUNNER_STATES, type RunnerState } from "./state.js";

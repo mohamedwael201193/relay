@@ -88,7 +88,25 @@ Doctor prints `PASS` / `WARN` / `FAIL` only. It never prints private keys or pas
 
 Environment variable **names** (values stay in gitignored files):
 
-`DEPLOYER_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `SOMNIA_SHANNON_RPC_URL`, `SOMNIA_SHANNON_WS_URL`, `SOMNIA_MAINNET_RPC_URL`, `DATABASE_URL`, `DIRECT_URL`, `SHANNON_INDEXER_URL`, `MAINNET_INDEXER_URL`
+`DEPLOYER_PRIVATE_KEY`, `OPERATOR_PRIVATE_KEY`, `SOMNIA_SHANNON_RPC_URL`, `SOMNIA_SHANNON_WS_URL`, `SOMNIA_MAINNET_RPC_URL`, `DATABASE_URL`, `DIRECT_URL`, `SHANNON_INDEXER_URL`, `MAINNET_INDEXER_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+
+## Verify a vault tape
+
+Judges replay receipts. Do not trust the UI without this.
+
+```bash
+pnpm verify 0x25cdBDbE9ca3eC7ea027D422dFA5440c0Dc9D133
+curl.exe -s https://relay-api-71gi.onrender.com/v1/runners/0x25cdBDbE9ca3eC7ea027D422dFA5440c0Dc9D133/history
+curl.exe -s https://relay-api-71gi.onrender.com/v1/runners/0x25cdBDbE9ca3eC7ea027D422dFA5440c0Dc9D133/proof
+```
+
+`pnpm verify` re-derives win rate (wins / (wins+losses)), streak, and net PnL from fill class + entry/redeem. Open laps and IOC UNKNOWN attempts are excluded. A mismatched stored PnL fails the report.
+
+In-app Alerts hydrate from those same laps. Optional Telegram: set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` on the worker; it sends the same receipt text after each settled lap and skips when unset (no fake chat).
+
+## SDK notes (Shannon)
+
+Pinned `@somnia-chain/markets-sdk@0.29.0` and `@somnia-chain/reactivity@0.2.1`. Live books come from the indexer + `getBinaryOrderBook`. Settlement prefers Reactivity `LapSettled` `fromCallback=true` on the vault; `syncResolution` is the worker backstop after one wait tick. tUSDC is 6 decimals. Do not enable `MAINNET_TRADING_ENABLED`.
 
 ## Layout
 
