@@ -10,6 +10,7 @@ import {
   oracleWaitView,
   remainingMs,
   settleHoldLapIndex,
+  tickLiveLapClock,
   windowBounds,
 } from "./activeLap";
 
@@ -180,6 +181,36 @@ describe("nextEligibleWindow", () => {
     expect(hint?.kind).toBe("opens");
     expect(hint?.startsAt).toBe(now + 450_000);
     expect(hint?.remainingMs).toBe(450_000);
+  });
+});
+
+describe("tickLiveLapClock", () => {
+  it("promotes HOLD to ORACLE the tick now crosses closeAt, and keeps elapsed wait honest", () => {
+    const closesAt = 10_000;
+    const hold = {
+      phase: "HOLD" as const,
+      previousPhase: "FILL" as const,
+      phaseHistory: ["SCAN", "ARMED", "ORDER", "FILL", "HOLD"] as ("SCAN" | "ARMED" | "ORDER" | "FILL" | "HOLD")[],
+      events: [{ id: "ev-HOLD", at: 1, kind: "HOLD", label: "POSITION LIVE" }],
+      market: { opensAt: 1_000, closesAt },
+      windowTotalMs: 9_000,
+      countdownMs: 500,
+      windowElapsedMs: 8_500,
+      oracleWait: null as null,
+    };
+    const stillOpen = tickLiveLapClock({ ...hold }, closesAt - 1);
+    expect(stillOpen.phase).toBe("HOLD");
+    expect(stillOpen.countdownMs).toBe(1);
+    const closed = tickLiveLapClock({ ...hold }, closesAt);
+    expect(closed.phase).toBe("ORACLE");
+    expect(closed.countdownMs).toBe(0);
+    expect(closed.phaseHistory).toEqual(expect.arrayContaining(["HOLD", "CLOSING", "ORACLE"]));
+    expect(closed.oracleWait?.status).toBe("waiting_answer");
+    expect(closed.oracleWait?.closedAgoMs).toBe(0);
+    const later = tickLiveLapClock(closed, closesAt + 42_000);
+    expect(later.phase).toBe("ORACLE");
+    expect(later.oracleWait?.delayed).toBe(true);
+    expect(later.oracleWait?.closedAgoMs).toBe(42_000);
   });
 });
 

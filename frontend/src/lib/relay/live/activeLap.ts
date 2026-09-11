@@ -256,3 +256,84 @@ export function measuredCloseToSettleMs(closeAt: number, settledAt: number | nul
   if (ms < 0) return null;
   return ms;
 }
+
+/** 1Hz clock: remaining = closeAt − now. Crossing closeAt must leave HOLD immediately. */
+export function tickLiveLapClock<T extends {
+  phase: LapPhase;
+  previousPhase?: LapPhase | null;
+  phaseHistory?: LapPhase[];
+  events: { id: string; at: number; kind: string; label: string; detail?: string }[];
+  market: { closesAt: number; opensAt: number };
+  windowTotalMs: number;
+  countdownMs: number;
+  windowElapsedMs: number;
+  oracleWait?: {
+    status: OracleWaitStatus;
+    delayed: boolean;
+    questionId: string | null;
+    host: string;
+    closedAgoMs: number;
+    expectedAt: number;
+    lastEventAt: number;
+  } | null;
+}>(lap: T, now: number): T {
+  const closesAt = lap.market.closesAt;
+  const closed = Number.isFinite(closesAt) && closesAt > 0 && now >= closesAt;
+  const left = remainingMs(closesAt, now);
+  const windowTotal = Math.max(1, lap.windowTotalMs || lap.market.closesAt - lap.market.opensAt);
+  let phase = lap.phase;
+  let phaseHistory = lap.phaseHistory;
+  let previousPhase = lap.previousPhase;
+  let events = lap.events;
+  if (closed && (phase === "HOLD" || phase === "FILL")) {
+    previousPhase = phase;
+    phase = "ORACLE";
+    phaseHistory = interpolatePhaseHistory(phase, lap.phaseHistory, true);
+    const seen = new Set(events.map((e) => e.kind));
+    const extra = [];
+    for (const p of phaseHistory ?? []) {
+      if (seen.has(p)) continue;
+      extra.push({
+        id: `ev-${p}`,
+        at: now,
+        kind: p,
+        label:
+          p === "CLOSING"
+            ? "WINDOW CLOSED · NO MORE ENTRIES"
+            : p === "ORACLE"
+              ? "WAITING FOR ANSWER"
+              : p,
+        detail: p === "CLOSING" ? "NO MORE ENTRIES" : undefined,
+      });
+    }
+    events = [...events, ...extra];
+  }
+  let oracleWait = lap.oracleWait ?? null;
+  if (closed) {
+    const prev = lap.oracleWait;
+    const answered =
+      prev?.status === "answer_received" || prev?.status === "settling" || prev?.status === "resolved";
+    oracleWait = oracleWaitView({
+      now,
+      closesAt,
+      hasOracleAnswer: Boolean(answered),
+      lastError: prev?.status === "settling" ? "waiting_reactivity" : null,
+      questionId: prev?.questionId,
+      host: prev?.host ?? "dev.oracle.somnia.host",
+      lastEventAt: prev?.lastEventAt,
+      settled: prev?.status === "resolved",
+    });
+  }
+  return {
+    ...lap,
+    phase,
+    previousPhase,
+    phaseHistory,
+    events,
+    oracleWait,
+    countdownMs: closed ? 0 : Number.isFinite(left) ? left : lap.countdownMs,
+    windowElapsedMs: closed
+      ? windowTotal
+      : Math.max(0, Math.min(windowTotal, now - lap.market.opensAt)),
+  };
+}

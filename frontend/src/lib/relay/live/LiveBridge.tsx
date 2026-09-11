@@ -44,7 +44,7 @@ import {
   streakFromHistory,
 } from "@/lib/relay/live/apply";
 import { resultFromLap } from "@/lib/relay/analytics";
-import { isNewSettledResult, settleHoldLapIndex } from "@/lib/relay/live/activeLap";
+import { isNewSettledResult, settleHoldLapIndex, tickLiveLapClock } from "@/lib/relay/live/activeLap";
 
 type EthereumProvider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
 type ConnectedWallet = {
@@ -822,7 +822,15 @@ export function LiveBridge() {
       if (esLive) return;
       pull();
     }, 8000);
-    const tickNow = () => useRelay.setState({ now: Date.now() });
+    const tickNow = () => {
+      const now = Date.now();
+      const lap = useRelay.getState().liveLap;
+      if (!lap) {
+        useRelay.setState({ now });
+        return;
+      }
+      useRelay.setState({ now, liveLap: tickLiveLapClock(lap, now) });
+    };
     tickNow();
     let clockInterval = 0;
     const clockAlign = window.setTimeout(() => {
