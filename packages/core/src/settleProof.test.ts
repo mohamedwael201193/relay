@@ -52,4 +52,13 @@ describe("proofTxFromAddressLogs", () => {
   it("does not invent a hash when LapSettled is missing", () => {
     expect(proofTxFromAddressLogs([{ topics: [LAP_SETTLED_TOPIC0, other], transaction_hash: hash }], market)).toBeNull();
   });
+
+  it("ignores null topic slots from Blockscout", () => {
+    expect(
+      proofTxFromAddressLogs(
+        [{ topics: [LAP_SETTLED_TOPIC0, market, null as unknown as string], transaction_hash: hash }],
+        market,
+      ),
+    ).toBe(hash);
+  });
 });

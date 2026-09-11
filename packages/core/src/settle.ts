@@ -59,7 +59,7 @@ export function proofTxFromAddressLogs(
   const market = marketId.toLowerCase();
   const topic0 = LAP_SETTLED_TOPIC0.toLowerCase();
   for (const item of items ?? []) {
-    const topics = (item.topics ?? []).map((t) => t.toLowerCase());
+    const topics = (item.topics ?? []).map((t) => (t ?? "").toLowerCase());
     if (topics[0] !== topic0) continue;
     if (topics[1] !== market) continue;
     const hash = item.transaction_hash;
