@@ -151,6 +151,18 @@ function EmptyTrackArt({ className }: { className?: string }) {
 
 function EmptyField() {
   const goScreen = useRelay((s) => s.goScreen);
+  const ownerReady = useRelay((s) => s.ownerReady);
+  const connected = useRelay((s) => s.wallet.connected);
+  if (connected && !ownerReady) {
+    return (
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-3xl flex-col items-center justify-center px-6 py-10 text-center">
+        <h2 className="serif-accent mt-8 text-4xl text-cream sm:text-5xl">LOADING RUNNER</h2>
+        <p className="mt-3 max-w-md text-sm leading-relaxed text-foam sm:text-base">
+          Reconstructing vault, active lap, and tape from the backend.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="mx-auto flex min-h-[70vh] w-full max-w-3xl flex-col items-center justify-center px-6 py-10 text-center">
       <EmptyTrackArt className="w-full max-w-lg" />

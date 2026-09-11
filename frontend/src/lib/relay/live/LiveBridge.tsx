@@ -135,6 +135,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     const mappedArena = arenaFromRows(arena.runners ?? [], null);
     useRelay.setState({
       ...ownerBoundReset(),
+      ownerReady: true,
       arena: mappedArena,
       boosts: relationshipsFromArenaBoosts("boosts" in arena ? arena.boosts ?? [] : [], mappedArena),
     });
@@ -273,6 +274,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
       protectedCount,
     },
     lastResult: builtResult,
+    ownerReady: true,
     resultOpen: isNewResult ? true : prev.resultOpen,
     resultSeen: isNewResult ? false : prev.resultSeen,
     notifications: incomingNotes.length
@@ -807,9 +809,13 @@ export function LiveBridge() {
       if (esLive) return;
       pull();
     }, 8000);
-    const clock = window.setInterval(() => {
-      useRelay.setState({ now: Date.now() });
-    }, 1000);
+    const tickNow = () => useRelay.setState({ now: Date.now() });
+    tickNow();
+    let clockInterval = 0;
+    const clockAlign = window.setTimeout(() => {
+      tickNow();
+      clockInterval = window.setInterval(tickNow, 1000);
+    }, Math.max(16, 1000 - (Date.now() % 1000)));
     const onVis = () => {
       if (document.visibilityState === "visible") pull();
     };
@@ -839,7 +845,8 @@ export function LiveBridge() {
     return () => {
       cancelled = true;
       window.clearInterval(poll);
-      window.clearInterval(clock);
+      window.clearTimeout(clockAlign);
+      if (clockInterval) window.clearInterval(clockInterval);
       if (esRetry) window.clearTimeout(esRetry);
       window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVis);

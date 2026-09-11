@@ -38,7 +38,9 @@ export function cents(v: number, decimals = 1) {
 }
 
 export function countdown(ms: number) {
-  const total = Math.max(0, Math.round(ms / 1000));
+  if (!Number.isFinite(ms)) return "—";
+  /* floor so the label never skips a second when remaining crosses .5s */
+  const total = Math.max(0, Math.floor(ms / 1000));
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;

@@ -10,6 +10,7 @@ describe("ownerBoundReset", () => {
     expect(patch.resultOpen).toBe(false);
     expect(patch.notifications).toEqual([]);
     expect(patch.liveLap).toBeNull();
+    expect(patch.ownerReady).toBe(false);
     expect(patch.bankroll).toBe(0);
     expect(patch.startBankroll).toBe(0);
     expect(patch.following).toEqual([]);

@@ -244,6 +244,7 @@ function initialState() {
 
     demo: { panelOpen: false, speed: 1, forcedOutcome: null, paused: false },
     now,
+    ownerReady: true,
     vaultAddress: null,
     backendState: null,
     backendLastError: null,

@@ -73,7 +73,9 @@ export function arenaFromRows(rows: ArenaRow[], myVault: string | null): ArenaRu
     const laps = Number(r.verified_laps) || 0;
     const wrRaw = r.win_rate;
     const winRate =
-      wrRaw == null || wrRaw === "" ? Number.NaN : Number(wrRaw);
+      laps > 0 && wrRaw != null && wrRaw !== "" && Number.isFinite(Number(wrRaw))
+        ? Number(wrRaw)
+        : Number.NaN;
     const closed = laps > 0;
     const pnlLife = closed && r.pnl_raw != null && r.pnl_raw !== "" ? Number(r.pnl_raw) / 1e6 : Number.NaN;
     const pnl7 = closed && r.pnl_7d_raw != null && r.pnl_7d_raw !== "" ? Number(r.pnl_7d_raw) / 1e6 : pnlLife;
@@ -417,7 +419,7 @@ export function liveLapFromState(opts: {
           id: `ord-${lastOrder.lap_index}`,
           kind: "IOC" as const,
           side,
-          price: fillYes,
+          price: entryPaid,
           quantity: qty,
           stake,
           placedAt: Date.parse(lastOrder.created_at) || opts.now,
@@ -431,7 +433,7 @@ export function liveLapFromState(opts: {
         ? {
             id: `fil-${lastOrder.lap_index}`,
             orderId: `ord-${lastOrder.lap_index}`,
-            price: fillYes,
+            price: entryPaid,
             quantity: Number(lastOrder.filled) / 1e6,
             filledAt: Date.parse(lastOrder.created_at) || opts.now,
             tx: { hash: lastOrder.tx_hash, block: 0, at: Date.parse(lastOrder.created_at) || opts.now },
@@ -554,7 +556,7 @@ export function lapsFromHistory(
         id: `ord-${h.lap_index}`,
         kind: "IOC" as const,
         side,
-        price: yes,
+        price: entryPaid,
         quantity: qty,
         stake,
         placedAt,
@@ -565,7 +567,7 @@ export function lapsFromHistory(
       fill: {
         id: `fil-${h.lap_index}`,
         orderId: `ord-${h.lap_index}`,
-        price: yes,
+        price: entryPaid,
         quantity: filledQty,
         filledAt: placedAt,
         tx,

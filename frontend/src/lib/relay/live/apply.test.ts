@@ -225,6 +225,8 @@ describe("lapsFromHistory", () => {
     expect(laps[0].side).toBe("DOWN");
     expect(laps[0].outcome).toBe("OPEN");
     expect(laps[0].entryPrice).toBeCloseTo(0.743);
+    expect(laps[0].order.price).toBeCloseTo(0.743);
+    expect(laps[0].fill.price).toBeCloseTo(0.743);
     expect(laps[0].stake).toBeCloseTo(1.50829);
     expect(Number.isNaN(laps[0].pnl)).toBe(true);
   });
@@ -633,6 +635,26 @@ describe("arenaFromRows", () => {
     const [entry] = arenaFromRows([row], row.vault);
     expect(entry.status).toBe("PAUSED");
     expect(entry.followers).toBe(0);
+  });
+
+  it("does not treat a zero-lap runner as 0% win rate", () => {
+    const row: ArenaRow = {
+      vault: "0x1111111111111111111111111111111111111111",
+      owner: "0x2222222222222222222222222222222222222222",
+      state: "ACTIVE",
+      verified_laps: 0,
+      win_rate: 0,
+      pnl_raw: "0",
+      pnl_7d_raw: "0",
+      streak: 0,
+      best_streak: 0,
+      interval_sec: "900",
+      boosters: 0,
+    };
+    const [entry] = arenaFromRows([row], null);
+    expect(entry.laps).toBe(0);
+    expect(Number.isNaN(entry.winRate)).toBe(true);
+    expect(Number.isNaN(entry.pnlLifetime)).toBe(true);
   });
 });
 

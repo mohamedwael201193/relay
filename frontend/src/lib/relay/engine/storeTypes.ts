@@ -65,7 +65,8 @@ export interface RelayStore {
   notifications: AppNotification[];
 
   demo: DemoState;
-  now: number;
+    now: number;
+  ownerReady: boolean;
 
   vaultAddress: string | null;
   backendState: string | null;

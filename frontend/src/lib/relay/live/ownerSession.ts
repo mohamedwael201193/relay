@@ -12,6 +12,7 @@ export function ownerBoundReset() {
     backendState: null as string | null,
     backendLastError: null as string | null,
     liveLap: null,
+    ownerReady: false,
     decision: null,
     laps: [] as never[],
     bankroll: 0,

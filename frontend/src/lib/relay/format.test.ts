@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clock, money, signed } from "./format";
+import { clock, countdown, money, signed } from "./format";
 
 describe("money empty vs zero", () => {
   it("renders unknown as an em dash, not $0.00", () => {
@@ -16,5 +16,11 @@ describe("money empty vs zero", () => {
   it("does not render epoch zero as 02:00:00", () => {
     expect(clock(0)).toBe("—");
     expect(clock(Number.NaN)).toBe("—");
+  });
+
+  it("floors countdown seconds so the label never skips", () => {
+    expect(countdown(9_000)).toBe("00:09");
+    expect(countdown(8_999)).toBe("00:08");
+    expect(countdown(Number.NaN)).toBe("—");
   });
 });

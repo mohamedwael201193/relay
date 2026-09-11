@@ -182,6 +182,23 @@ function BetweenLaps() {
 
 function NoRunnerState() {
   const goScreen = useRelay((s) => s.goScreen);
+  const ownerReady = useRelay((s) => s.ownerReady);
+  const connected = useRelay((s) => s.wallet.connected);
+  if (connected && !ownerReady) {
+    return (
+      <div className="grid place-items-center px-4 py-20 sm:py-28 min-h-[70vh] grain grain-d">
+        <div className="text-center">
+          <LiveDot label="SYNC" tone="flame" />
+          <h2 className="mt-6 text-3xl font-extrabold wide text-cream" style={{ fontFamily: "var(--font-display)" }}>
+            RECONSTRUCTING LAP
+          </h2>
+          <p className="mt-3 text-foam text-sm max-w-sm mx-auto">
+            Fetching the runner, active market, and proof. Not an empty field.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid place-items-center px-4 py-20 sm:py-28 min-h-[70vh] grain grain-d">

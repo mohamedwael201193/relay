@@ -67,6 +67,7 @@ export function emptyLiveState(): Omit<
     notifications: [],
     demo: { panelOpen: false, speed: 1, forcedOutcome: null, paused: false },
     now: Date.now(),
+    ownerReady: false,
     vaultAddress: null,
     backendState: null,
     backendLastError: null,
