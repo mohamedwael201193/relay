@@ -172,13 +172,7 @@ export async function runLiveOrder(
     intervalSec: opts.intervalSec,
     waitMs: opts.waitMs ?? 90_000,
   });
-  if (!chosen && opts.intervalSec) {
-    chosen = await discoverLiveMarket({
-      ...discoverBase,
-      waitMs: 20_000,
-      maxExpiryHorizonSec: opts.maxExpiryHorizonSec ?? 320,
-    });
-  }
+  // Cadence is locked at deploy. Do not silently trade a shorter window.
 
   if (!chosen) {
     throw new Error("no live Trading market with on-chain book and non-zero marketExpiryNs");

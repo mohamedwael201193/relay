@@ -6,6 +6,8 @@ describe("discover helpers", () => {
     expect(intervalMatches("60", "60")).toBe(true);
     expect(intervalMatches(60, "60")).toBe(true);
     expect(intervalMatches("300", "60")).toBe(false);
+    expect(intervalMatches("60", "900")).toBe(false);
+    expect(intervalMatches("900", "900")).toBe(true);
     expect(intervalMatches(undefined, undefined)).toBe(true);
   });
 
