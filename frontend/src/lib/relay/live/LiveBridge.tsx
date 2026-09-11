@@ -856,7 +856,7 @@ export function LiveBridge() {
     };
     attachEs();
     const unsubResult = useRelay.subscribe((s, p) => {
-      if (p.resultOpen && !s.resultOpen) pull();
+      if (p.resultOpen !== s.resultOpen) pull();
     });
     return () => {
       cancelled = true;
