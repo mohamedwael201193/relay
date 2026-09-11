@@ -53,6 +53,8 @@ export function RiskPolicySection() {
   const setDraft = useRelay((s) => s.setDraftConfig);
   const goScreen = useRelay((s) => s.goScreen);
   const backendLastError = useRelay((s) => s.backendLastError);
+  const txPhase = useRelay((s) => s.txPhase);
+  const apiError = useRelay((s) => s.apiError);
   const needsSettlementAuth = backendLastError === "needs_outcome_approval";
 
   const live = runner?.config ?? config;
@@ -248,13 +250,27 @@ export function RiskPolicySection() {
             APPLY ON NEXT DEPLOY →
           </button>
           {isLiveMode() && streak.shieldsMax === 0 && draft.shieldsMax > 0 ? (
-            <button
-              type="button"
-              onClick={() => useRelay.getState().chargeShields()}
-              className="mlabel mt-3 w-full rounded-xl border-2 border-lined bg-panel2 py-3.5 text-cream transition-colors hover:border-lime hover:text-lime focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime"
-            >
-              CHARGE SHIELDS ON THIS VAULT
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => useRelay.getState().chargeShields()}
+                className="mlabel mt-3 w-full rounded-xl border-2 border-lined bg-panel2 py-3.5 text-cream transition-colors hover:border-lime hover:text-lime focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime"
+              >
+                CHARGE SHIELDS ON THIS VAULT
+              </button>
+              {txPhase ? (
+                <p
+                  className={cn(
+                    "data mt-2 text-xs",
+                    txPhase.status === "failed" ? "text-ember" : "text-foam",
+                  )}
+                >
+                  {txPhase.label}
+                  {txPhase.hash ? ` · ${txPhase.hash.slice(0, 10)}…` : ""}
+                </p>
+              ) : null}
+              {apiError ? <p className="mlabel mt-2 text-ember">{apiError}</p> : null}
+            </>
           ) : null}
           {isLiveMode() && needsSettlementAuth ? (
             <button

@@ -609,13 +609,32 @@ export function LiveBridge() {
       },
       chargeShields: async () => {
         try {
+          useRelay.setState({ apiError: null });
           const net = await relayApi.network();
           const { walletClient, publicClient, owner } = await clients(net);
           const listed = await relayApi.runnersByOwner(owner);
           const vault = pickOwnedVault(listed.runners, useRelay.getState().vaultAddress);
-          if (!vault || isOpsVault(vault)) return;
+          if (!vault || isOpsVault(vault)) {
+            throw new Error("No owned vault to charge. Deploy a runner first.");
+          }
           const n = Math.max(0, Math.min(3, useRelay.getState().draftConfig.shieldsMax));
-          if (n <= 0) return;
+          if (n <= 0) {
+            throw new Error("Pick 1–3 shields in the draft, then charge.");
+          }
+          phase("Checking shields bytecode", "waiting");
+          try {
+            await publicClient.simulateContract({
+              address: vault as Address,
+              abi: vaultWriteAbi,
+              functionName: "setShieldsMax",
+              args: [n],
+              account: owner as Address,
+            });
+          } catch {
+            throw new Error(
+              "This vault cannot charge shields on-chain. Kill it and deploy a new runner — CHARGE SHIELDS needs the newer bytecode.",
+            );
+          }
           await send(walletClient, publicClient, {
             to: vault as Address,
             data: encodeFunctionData({
