@@ -10,9 +10,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useRelay } from "@/lib/relay/engine/store";
 import { Panel, PriceLine } from "@/components/relay/core/primitives";
 import { DownMark, UpMark, VerifiedSeal } from "@/components/relay/identity/identity";
-import { cents, price as fmtPrice, shortHash, signed, signedPct } from "@/lib/relay/format";
+import { cents, countdown, price as fmtPrice, shortHash, signed, signedPct } from "@/lib/relay/format";
 import { explorerTxUrl } from "@/lib/relay/config/network";
-import type { LapResult } from "@/lib/relay/types";
+import type { LapResult, OracleWaitView } from "@/lib/relay/types";
 import { cn } from "@/lib/utils";
 import { entryUpTerms, pctChange, useFlash } from "./helpers";
 
@@ -77,7 +77,7 @@ export function PricePanel({ className }: { className?: string }) {
         </div>
 
         <AnimatePresence>
-          {phase === "ORACLE" && <OracleBand key="oracle-band" />}
+          {phase === "ORACLE" && <OracleBand key="oracle-band" wait={lap.oracleWait} />}
           {phase === "RESULT" && lastResult && <ResultFlash key="result-flash" r={lastResult} />}
           {phase === "CLAIM" && lastResult && <ClaimStrip key="claim-strip" r={lastResult} />}
         </AnimatePresence>
@@ -88,7 +88,9 @@ export function PricePanel({ className }: { className?: string }) {
 
 /* ── ORACLE: the answering band ─────────────────────────────── */
 
-function OracleBand() {
+function OracleBand({ wait }: { wait?: OracleWaitView | null }) {
+  const received =
+    wait?.status === "answer_received" || wait?.status === "settling" || wait?.status === "resolved";
   return (
     <motion.div
       className="absolute inset-x-3 top-1/2 -translate-y-1/2 z-10"
@@ -114,13 +116,21 @@ function OracleBand() {
             className="data text-xl sm:text-2xl font-bold wide tracking-tight"
             style={{ color: "#ffb224", fontFamily: "var(--font-display)" }}
           >
-            ORACLE ANSWERING
+            {received ? "ANSWER RECEIVED" : "WAITING FOR ANSWER"}
           </div>
-          <div className="mlabel text-foam mt-1.5">AnswerDelivered · SOMNIA REACTIVITY</div>
+          <div className="mlabel text-foam mt-1.5">
+            {received
+              ? "AnswerDelivered · SOMNIA REACTIVITY"
+              : wait?.questionId
+                ? `Question #${wait.questionId} · ${wait.host}`
+                : "Waiting for the oracle answer"}
+          </div>
         </div>
-        <span className="ml-auto data text-2xl font-semibold text-foam/50 hidden sm:block" aria-hidden>
-          00:00
-        </span>
+        {wait ? (
+          <span className="ml-auto data text-2xl font-semibold text-foam/80 hidden sm:block">
+            {countdown(wait.closedAgoMs)}
+          </span>
+        ) : null}
       </motion.div>
     </motion.div>
   );
