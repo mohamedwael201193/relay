@@ -114,6 +114,12 @@ export async function readLapSettledProofTx(
   marketId: Hex,
   lookbackBlocks = 16_000n,
 ): Promise<Hex | null> {
+  try {
+    const fromExplorer = await readLapSettledFromExplorer(vault, marketId);
+    if (fromExplorer) return fromExplorer;
+  } catch {
+    /* explorer optional; RPC next */
+  }
   const client = shannonHttpClient();
   try {
     const latest = await client.getBlockNumber();
@@ -129,13 +135,9 @@ export async function readLapSettledProofTx(
     const hash = hit?.transactionHash;
     if (hash && TX_HASH.test(hash)) return hash;
   } catch {
-    /* Shannon public RPC often rejects eth_getLogs; explorer is chain-indexed. */
+    /* Shannon public RPC often rejects or hangs eth_getLogs */
   }
-  try {
-    return await readLapSettledFromExplorer(vault, marketId);
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 async function trySend(
