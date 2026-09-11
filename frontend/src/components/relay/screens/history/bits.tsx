@@ -7,7 +7,7 @@
  */
 
 import type { ReactNode } from "react";
-import { Check, Minus, X } from "lucide-react";
+import { Check, Copy, Minus, X } from "lucide-react";
 import type { LapOutcome, Side } from "@/lib/relay/types";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ShieldMark } from "../../identity/identity";
@@ -118,9 +118,41 @@ export function MonoRow({
     flame: "text-flame",
   } as const;
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-lined/70 py-1.5 last:border-b-0">
+    <div className="flex items-start justify-between gap-3 border-b border-lined/70 py-1.5 last:border-b-0 min-w-0">
       <span className="mlabel shrink-0 text-foam/75">{label}</span>
-      <span className={cn("data min-w-0 truncate text-xs", tones[tone])}>{value}</span>
+      <span className={cn("data min-w-0 max-w-[70%] break-all text-right text-xs leading-snug", tones[tone])}>{value}</span>
     </div>
+  );
+}
+
+export function HashRow({ label, hash }: { label: string; hash: string }) {
+  if (!hash) {
+    return <MonoRow label={label} value="—" tone="foam" />;
+  }
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-lined/70 py-1.5 last:border-b-0 min-w-0">
+      <span className="mlabel shrink-0 text-foam/75">{label}</span>
+      <span className="inline-flex min-w-0 items-center gap-1">
+        <span className="data truncate text-xs text-foam">{hash.length > 18 ? `${hash.slice(0, 10)}…${hash.slice(-6)}` : hash}</span>
+        <CopyHashButton text={hash} />
+      </span>
+    </div>
+  );
+}
+
+function CopyHashButton({ text }: { text: string }) {
+  return (
+    <button
+      type="button"
+      aria-label="Copy"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void navigator.clipboard.writeText(text).catch(() => undefined);
+      }}
+      className="shrink-0 rounded-md p-1 text-foam/70 hover:bg-panel2 hover:text-cream focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime"
+    >
+      <Copy className="h-3 w-3" aria-hidden />
+    </button>
   );
 }

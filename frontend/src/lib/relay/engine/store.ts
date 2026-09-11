@@ -71,7 +71,12 @@ export const useRelay = create<RelayStore>((set, get) => ({
     }
   },
 
-  setDraftConfig: (patch) => set((s) => ({ draftConfig: { ...s.draftConfig, ...patch } })),
+  setDraftConfig: (patch) =>
+    set((s) => {
+      const next = { ...s.draftConfig, ...patch };
+      if (next.stopLoss > next.budget) next.stopLoss = next.budget;
+      return { draftConfig: next };
+    }),
   deployDraft: () => {
     void get().deployDraftAsync();
   },
@@ -119,9 +124,8 @@ export const useRelay = create<RelayStore>((set, get) => ({
       budget: amount,
       stopLoss: Math.min(amount, get().draftConfig.stopLoss),
     });
-    set({ boostIntent: { leaderVault: runnerId } });
+    set({ boostIntent: { leaderVault: runnerId }, txPhase: { label: "Signature required", status: "waiting" } });
     void get().deployDraftAsync();
-    get().goScreen("live");
   },
   toggleFollow: (runnerId) => {
     const s = get();
@@ -172,7 +176,13 @@ export function selectPnl(s: { bankroll: number; startBankroll: number; laps: La
 }
 
 export function selectLivePnl(live: LiveLap | null): number {
-  if (!live?.position) return 0;
+  if (!live?.position) return Number.NaN;
+  if (live.phase === "HOLD" || live.phase === "FILL" || live.phase === "ORDER" || live.phase === "CLOSING" || live.phase === "ORACLE") {
+    return Number.NaN;
+  }
+  if (!Number.isFinite(live.position.markPrice) || live.position.markPrice === live.position.entryPrice) {
+    return Number.NaN;
+  }
   const raw = live.position.quantity * live.position.markPrice - live.position.stake;
   return Math.abs(raw) < 5e-7 ? 0 : raw;
 }

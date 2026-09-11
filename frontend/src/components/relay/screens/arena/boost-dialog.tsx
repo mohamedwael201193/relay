@@ -5,9 +5,12 @@
  * Boost deploys an independent RunnerVault owned by you, cloning the
  * leader's bias / cadence / assets. Your tUSDC, RELAY operator — never
  * the leader's wallet.
+ *
+ * Signature acceptance is not completion. BOOSTED only after the child
+ * vault exists on-chain and the backend has verified it.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +27,18 @@ import { AssetIcon, FlameMark } from "../../identity/identity";
 
 const AMOUNTS = [10, 25, 50];
 
+function boostLabel(status: string | undefined, label: string | undefined, failed: boolean, complete: boolean): string {
+  if (complete) return "BOOST COMPLETE";
+  if (failed) return "BOOST FAILED";
+  if (status === "waiting" || status === "signing") return "SIGNATURE REQUIRED";
+  if (status === "submitting" && /provision|creat/i.test(label ?? "")) return "PROVISIONING";
+  if (status === "submitting") return "SIGNATURE ACCEPTED";
+  if (status === "confirming") return "ON-CHAIN CONFIRMING";
+  if (status === "confirmed") return "VERIFYING CHILD";
+  if (label) return label.toUpperCase();
+  return "BOOST PENDING";
+}
+
 export function BoostDialog({
   entry,
   open,
@@ -35,12 +50,31 @@ export function BoostDialog({
 }) {
   const wallet = useRelay((s) => s.wallet);
   const boostRunner = useRelay((s) => s.boostRunner);
+  const txPhase = useRelay((s) => s.txPhase);
+  const boostIntent = useRelay((s) => s.boostIntent);
+  const vaultAddress = useRelay((s) => s.vaultAddress);
   const [amount, setAmount] = useState(25);
+  const [started, setStarted] = useState(false);
 
   const insufficient = wallet.tUSDC < amount;
   const self = !!entry.isYou;
+  const boosting = started && !!boostIntent;
+  const failed = boosting && txPhase?.status === "failed";
+  const complete =
+    boosting &&
+    txPhase?.status === "confirmed" &&
+    !!vaultAddress &&
+    vaultAddress.toLowerCase() !== entry.runnerId.toLowerCase();
+  const busy = boosting && !failed && !complete;
+  const statusText = boostLabel(txPhase?.status, txPhase?.label, Boolean(failed), Boolean(complete));
+
+  useEffect(() => {
+    if (!open) setStarted(false);
+  }, [open]);
 
   const handleOpenChange = (o: boolean) => {
+    if (busy) return;
+    if (!o) useRelay.setState({ boostIntent: null, txPhase: failed || complete ? null : useRelay.getState().txPhase });
     onOpenChange(o);
   };
 
@@ -63,6 +97,7 @@ export function BoostDialog({
             <button
               key={a}
               type="button"
+              disabled={busy}
               onClick={() => setAmount(a)}
               aria-pressed={amount === a}
               className={cn(
@@ -70,7 +105,8 @@ export function BoostDialog({
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime",
                 amount === a
                   ? "border-lime bg-lime/10"
-                  : "border-lined hover:border-foam/40"
+                  : "border-lined hover:border-foam/40",
+                busy && "opacity-60",
               )}
             >
               <AssetIcon asset="tUSDC" size={26} />
@@ -96,22 +132,50 @@ export function BoostDialog({
           </p>
         )}
 
+        {started ? (
+          <div
+            className={cn(
+              "rounded-xl border-2 px-4 py-3 text-center",
+              complete ? "border-lime bg-lime/10" : failed ? "border-ember bg-ember/10" : "border-lined",
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            <div className={cn("mlabel", complete ? "text-lime" : failed ? "text-ember" : "text-flame")}>
+              {statusText}
+            </div>
+            {txPhase?.hash ? (
+              <div className="data mt-1 truncate text-[0.65rem] text-foam">{txPhase.hash}</div>
+            ) : null}
+            {complete && vaultAddress ? (
+              <div className="data mt-1 truncate text-[0.65rem] text-foam">CHILD {vaultAddress}</div>
+            ) : null}
+            {failed && txPhase?.label ? (
+              <p className="mt-1 text-xs text-ember">{txPhase.label}</p>
+            ) : null}
+          </div>
+        ) : null}
+
         <button
           type="button"
-          disabled={insufficient || self}
+          disabled={insufficient || self || busy}
           onClick={() => {
-            boostRunner(entry.runnerId, amount);
-            onOpenChange(false);
+            if (complete) {
+              onOpenChange(false);
+              return;
+            }
+            setStarted(true);
+            void boostRunner(entry.runnerId, amount);
           }}
           className={cn(
             "flex w-full items-center justify-center gap-2 rounded-xl border-2 border-lime bg-lime px-4 py-3.5",
             "font-black wide text-base text-graphite hardshadow-d",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime",
-            insufficient || self ? "cursor-not-allowed opacity-50" : "hover:-translate-y-0.5"
+            insufficient || self || busy ? "cursor-not-allowed opacity-50" : "hover:-translate-y-0.5",
           )}
         >
           <FlameMark className="h-5 w-5" aria-hidden />
-          BOOST {money(amount)}
+          {complete ? "DONE" : busy ? statusText : `BOOST ${money(amount)}`}
         </button>
       </DialogContent>
     </Dialog>

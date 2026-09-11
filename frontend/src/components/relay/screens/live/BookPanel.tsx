@@ -63,7 +63,7 @@ export function BookPanel({ className }: { className?: string }) {
           <LadderRow key={`ask-${i}`} level={l} maxSize={maxSize} tone="ask" />
         ))}
         <div className="flex items-center justify-center border-y-2 border-lined bg-panel2/50 py-1.5 my-1">
-          <span className="data text-xs text-foam">SPREAD {cents(book.spread)}</span>
+          <span className="data text-xs text-foam">SPREAD {Number.isFinite(book.spread) ? cents(book.spread) : "—"}</span>
         </div>
         {bids.map((l, i) => (
           <LadderRow key={`bid-${i}`} level={l} maxSize={maxSize} tone="bid" />
@@ -85,7 +85,7 @@ export function BookPanel({ className }: { className?: string }) {
           ))}
         </div>
         <div className="col-span-2 data text-xs text-foam text-center border-t-2 border-lined pt-1.5 mt-1">
-          SPREAD {cents(book.spread)}
+          SPREAD {Number.isFinite(book.spread) ? cents(book.spread) : "—"}
         </div>
       </div>
         </>

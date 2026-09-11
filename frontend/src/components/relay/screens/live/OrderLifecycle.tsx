@@ -31,7 +31,7 @@ export function OrderLifecycle({ className }: { className?: string }) {
   if (!lap) return null;
   const { phase, order, fill, position } = lap;
 
-  const stage: "scan" | "armed" | "order" | "fill" | "hold" =
+  const stage: "scan" | "armed" | "order" | "fill" | "hold" | "close" | "oracle" | "result" | "claim" | "rearm" =
     phase === "SCAN"
       ? "scan"
       : phase === "ARMED"
@@ -40,7 +40,17 @@ export function OrderLifecycle({ className }: { className?: string }) {
           ? "order"
           : phase === "FILL"
             ? "fill"
-            : "hold";
+            : phase === "CLOSING"
+              ? "close"
+              : phase === "ORACLE"
+                ? "oracle"
+                : phase === "RESULT"
+                  ? "result"
+                  : phase === "CLAIM"
+                    ? "claim"
+                    : phase === "REARM"
+                      ? "rearm"
+                      : "hold";
 
   return (
     <Panel label={`ORDER FLOW · LAP ${lap.number}`} className={className}>
@@ -66,6 +76,46 @@ export function OrderLifecycle({ className }: { className?: string }) {
               ) : (
                 <PreparingBody />
               ))}
+            {stage === "close" && (
+              <SettleStage
+                title="WINDOW CLOSED"
+                detail="No more entries. Waiting for the oracle answer."
+                position={position}
+                pnl={livePnl}
+              />
+            )}
+            {stage === "oracle" && (
+              <SettleStage
+                title="WAITING FOR RESOLUTION"
+                detail="Oracle answering · settles 0 or 1."
+                position={position}
+                pnl={livePnl}
+              />
+            )}
+            {stage === "result" && (
+              <SettleStage
+                title="RESULT"
+                detail="Outcome known. Redeem follows."
+                position={position}
+                pnl={livePnl}
+              />
+            )}
+            {stage === "claim" && (
+              <SettleStage
+                title="CLAIM / SETTLEMENT"
+                detail="Redeeming the vault payout."
+                position={position}
+                pnl={livePnl}
+              />
+            )}
+            {stage === "rearm" && (
+              <SettleStage
+                title="RE-ARM"
+                detail="Baton pass — next window is a new lap identity."
+                position={position}
+                pnl={livePnl}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -386,13 +436,13 @@ function HoldBody({
           <div className="mlabel text-foam/80">LIVE PNL · UNSETTLED</div>
           <motion.div
             key={flash.key}
-            className={cn("data text-3xl font-semibold mt-1.5 leading-none", pnlTone)}
+            className={cn("data text-3xl font-semibold mt-1.5 leading-none", Number.isFinite(pnl) ? pnlTone : "text-foam")}
             initial={{ scale: 1.05 }}
             animate={{ scale: 1 }}
             transition={{ duration: 0.25 }}
             aria-live="polite"
           >
-            {signed(pnl)}
+            {Number.isFinite(pnl) ? signed(pnl) : "—"}
           </motion.div>
         </div>
         <div className="text-right">
@@ -410,6 +460,47 @@ function HoldBody({
         >
           AUTHORIZE SETTLEMENT
         </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SettleStage({
+  title,
+  detail,
+  position,
+  pnl,
+}: {
+  title: string;
+  detail: string;
+  position: Position | null;
+  pnl: number;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-3 flex-wrap">
+        {position ? (
+          <span
+            className={cn(
+              "data font-bold text-sm px-2.5 py-1 rounded-md border-2 border-graphite",
+              position.side === "UP" ? "bg-lime text-graphite" : "bg-ember text-cream",
+            )}
+          >
+            {position.side === "UP" ? "▲ UP" : "▼ DOWN"}
+          </span>
+        ) : null}
+        <span className="data text-lg font-bold wide text-cream tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          {title}
+        </span>
+      </div>
+      <div className="mlabel text-foam mt-2">{detail}</div>
+      {position ? (
+        <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
+          <Spec label={`ENTRY · ${position.side} TERMS`} value={cents(position.entryPrice)} />
+          <Spec label="STAKE" value={money(position.stake)} />
+          <Spec label="QUANTITY" value={`${contracts(position.quantity)} CT`} />
+          <Spec label="UNSETTLED PNL" value={Number.isFinite(pnl) ? signed(pnl) : "—"} />
+        </div>
       ) : null}
     </div>
   );

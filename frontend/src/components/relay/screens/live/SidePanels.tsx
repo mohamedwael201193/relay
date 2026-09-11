@@ -64,8 +64,8 @@ export function PositionMini({ className }: { className?: string }) {
           >
             {p.side === "UP" ? "▲ UP" : "▼ DOWN"}
           </span>
-          <span className={cn("data text-xl font-semibold", pnlTone)} aria-live="polite">
-            {signed(pnl)}
+          <span className={cn("data text-xl font-semibold", Number.isFinite(pnl) ? pnlTone : "text-foam")} aria-live="polite">
+            {Number.isFinite(pnl) ? signed(pnl) : "—"}
           </span>
         </div>
         <div className="grid grid-cols-2 gap-2">

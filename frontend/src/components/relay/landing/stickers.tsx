@@ -11,7 +11,8 @@ import { Fragment } from "react";
 import { Check, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRelay } from "@/lib/relay/engine/store";
-import { cents, countdown, hhmm, shortHash, signed } from "@/lib/relay/format";
+import { cents, hhmm, shortHash, signed } from "@/lib/relay/format";
+import { useCloseCountdown } from "@/lib/relay/live/useCloseCountdown";
 import { AssetIcon, BatonGlyph, FlameMark, ShieldMark, VerifiedSeal } from "../identity/identity";
 
 const INK = "#1a1610";
@@ -23,6 +24,7 @@ const LIME = "#aae83c";
 export function WallOfWindows({ className }: { className?: string }) {
   const liveLap = useRelay((s) => s.liveLap);
   const laps = useRelay((s) => s.laps);
+  const clock = useCloseCountdown(liveLap?.market.closesAt, liveLap?.phase);
 
   return (
     <div className={cn("relative", className)} role="img" aria-label="A dense wall of market windows that settled while you were away">
@@ -35,7 +37,7 @@ export function WallOfWindows({ className }: { className?: string }) {
             </div>
             <div className="data text-sm font-bold mt-1">{cents(liveLap.probUp)}</div>
             <div className="data text-[0.5625rem] uppercase tracking-[0.12em] mt-1 opacity-80">
-              {countdown(liveLap.countdownMs)} LEFT
+              {clock.label} LEFT
             </div>
           </div>
         )}
@@ -72,6 +74,7 @@ export function ClaimSticker({ className }: { className?: string }) {
 export function BatonPassDiagram({ className }: { className?: string }) {
   const laps = useRelay((s) => s.laps);
   const live = useRelay((s) => s.liveLap);
+  const clock = useCloseCountdown(live?.market.closesAt, live?.phase);
   const prev = laps.length ? laps[laps.length - 1] : null;
   const prevTone = !prev
     ? "text-ink2"
@@ -127,7 +130,7 @@ export function BatonPassDiagram({ className }: { className?: string }) {
           <span className="text-sm font-bold">{live?.market.asset ?? "ETH"} IN FLIGHT</span>
         </div>
         <div className="data mt-1.5 text-sm font-semibold text-ink">
-          {live ? `${countdown(live.countdownMs)} TO SETTLE` : "—"}
+          {live ? `${clock.label} TO SETTLE` : "—"}
         </div>
       </div>
     </div>

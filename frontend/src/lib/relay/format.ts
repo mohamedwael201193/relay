@@ -52,6 +52,7 @@ export function countdownMs(ms: number) {
 }
 
 export function clock(at: number) {
+  if (!Number.isFinite(at) || at <= 0) return "—";
   return new Date(at).toLocaleTimeString("en-US", {
     hour12: false,
     hour: "2-digit",
@@ -91,6 +92,8 @@ export function shortAddr(a: string) {
 }
 
 export function shortHash(h: string) {
+  if (!h) return "—";
+  if (h.length <= 18) return h;
   return `${h.slice(0, 10)}…${h.slice(-6)}`;
 }
 

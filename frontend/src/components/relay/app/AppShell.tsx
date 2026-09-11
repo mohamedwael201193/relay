@@ -27,9 +27,10 @@ import type { LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { selectUnread, useRelay } from "@/lib/relay/engine/store";
-import { countdown, money } from "@/lib/relay/format";
+import { money } from "@/lib/relay/format";
 import type { AppScreen } from "@/lib/relay/types";
 import { cn } from "@/lib/utils";
+import { useCloseCountdown } from "@/lib/relay/live/useCloseCountdown";
 import { FlameMark, RelayLogo } from "../identity/identity";
 import { LapRing } from "../core/LapRing";
 import { LiveDot } from "../core/primitives";
@@ -107,6 +108,8 @@ function UnreadBadge({ count }: { count: number }) {
 function RailLiveCard() {
   const liveLap = useRelay((s) => s.liveLap);
   const streak = useRelay((s) => s.streak.current);
+  const now = useRelay((s) => s.now);
+  const clock = useCloseCountdown(liveLap?.market.closesAt, liveLap?.phase);
 
   if (!liveLap) {
     return (
@@ -117,13 +120,15 @@ function RailLiveCard() {
     );
   }
   const progress =
-    liveLap.windowTotalMs > 0 ? liveLap.windowElapsedMs / liveLap.windowTotalMs : 0;
+    liveLap.windowTotalMs > 0
+      ? Math.max(0, Math.min(1, (now - liveLap.market.opensAt) / liveLap.windowTotalMs))
+      : 0;
   return (
     <div className="rounded-xl border-2 border-lined bg-panel2/40 p-3">
       <div className="flex justify-center">
         <LapRing
           progress={progress}
-          countdownLabel={countdown(liveLap.countdownMs)}
+          countdownLabel={clock.label}
           phase={liveLap.phase}
           asset={liveLap.market.asset}
           side={liveLap.position?.side ?? null}
@@ -225,6 +230,7 @@ function Rail() {
 function BroadcastBar() {
   const screen = useRelay((s) => s.screen);
   const liveLap = useRelay((s) => s.liveLap);
+  const clock = useCloseCountdown(liveLap?.market.closesAt, liveLap?.phase);
   const bankroll = useRelay((s) => s.bankroll);
   const streak = useRelay((s) => s.streak.current);
   const lastResult = useRelay((s) => s.lastResult);
@@ -243,8 +249,8 @@ function BroadcastBar() {
           <>
             <LiveDot tone="lime" label={`${liveLap.market.asset} UP/DOWN`} />
             <Divider />
-            <span className="data w-[3.4rem] text-right tabular-nums text-sm text-cream">
-              {countdown(liveLap.countdownMs)}
+            <span className="data w-[4.6rem] text-right tabular-nums text-sm text-cream">
+              {clock.label}
             </span>
             {side ? (
               <span

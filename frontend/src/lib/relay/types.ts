@@ -259,10 +259,14 @@ export interface LiveLap {
   number: number;
   market: MarketWindow;
   phase: LapPhase;
+  previousPhase?: LapPhase | null;
+  /** Completed + current phases for this lapId, including hops the client missed. */
+  phaseHistory?: LapPhase[];
   phaseStartedAt: number;
   /** ms elapsed inside the current window (for the countdown ring) */
   windowElapsedMs: number;
   windowTotalMs: number;
+  /** Snapshot at last server sync. UI ticks from market.closesAt locally. */
   countdownMs: number;
   position: Position | null;
   order: OrderRecord | null;

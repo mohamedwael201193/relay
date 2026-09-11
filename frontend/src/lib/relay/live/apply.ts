@@ -1,7 +1,16 @@
-import type { AppNotification, ArenaRunner, AssetId, BookSnapshot, BoostRelationship, Lap, LapPhase, LiveLap, MarketWindow, Outcome, Runner, WindowCadence } from "../types";
+import type { AppNotification, ArenaRunner, AssetId, BookSnapshot, BoostRelationship, Lap, LapEvent, LapPhase, LiveLap, MarketWindow, Outcome, Runner, WindowCadence } from "../types";
 import { fillIsVerified, mapBackendState } from "../mapping";
 import type { ArenaBoost, ArenaRow, HistoryLap, LiveMarketRow, ProofBundle, RunnerRow } from "../api/client";
 import { EMPTY_BOOK } from "../config/network";
+import {
+  deriveVisualPhase,
+  hasOracleAnswer,
+  interpolatePhaseHistory,
+  intervalMsFromSec,
+  isInFlightState,
+  remainingMs,
+  windowBounds,
+} from "./activeLap";
 
 function shortHandle(addr: string): string {
   if (!addr) return "@runner";
@@ -157,8 +166,9 @@ export function assetFromMarket(
 }
 
 function windowFromMarketRow(r: LiveMarketRow, now: number): MarketWindow {
-  const expiryMs = r.expiry ? Number(r.expiry) * 1000 : now + 60_000;
   const asset = assetFromMarket(r.marketId, r, []);
+  const intervalMs = intervalMsFromSec(r.intervalSec);
+  const bounds = windowBounds({ intervalMs, expirySec: r.expiry, now });
   const openPrice = Number(r.openPrice);
   return {
     id: r.marketId,
@@ -167,12 +177,63 @@ function windowFromMarketRow(r: LiveMarketRow, now: number): MarketWindow {
     label: `${asset} Up or Down`,
     cadence: cadenceFromInterval(r.intervalSec ?? null),
     openPrice: Number.isFinite(openPrice) && openPrice > 0 ? openPrice : 0,
-    opensAt: now,
-    closesAt: Number.isFinite(expiryMs) ? expiryMs : now + 60_000,
+    opensAt: bounds.opensAt,
+    closesAt: bounds.closesAt,
     venue: "DreamDEX · Event Contracts",
     collateral: "tUSDC" as const,
     live: r.onchainStatus === "Trading",
   };
+}
+
+function phaseLabel(phase: LapPhase, lastError: string | null): string {
+  switch (phase) {
+    case "SCAN":
+      return "SCANNING WINDOWS";
+    case "ARMED":
+      return "DECISION PREPARED";
+    case "ORDER":
+      return "ORDER ACCEPTED · WAITING FOR FILL";
+    case "FILL":
+      return "FILLED";
+    case "HOLD":
+      return "POSITION LIVE";
+    case "CLOSING":
+      return "WINDOW CLOSED";
+    case "ORACLE":
+      return lastError === "waiting_reactivity" ? "WAITING FOR RESOLUTION" : "ORACLE ANSWER";
+    case "RESULT":
+      return "RESULT";
+    case "CLAIM":
+      return "CLAIM / REDEEM";
+    case "REARM":
+      return "RE-ARMING NEXT WINDOW";
+    default:
+      return phase;
+  }
+}
+
+function eventsFromHistory(
+  history: LapPhase[],
+  prev: LiveLap | null | undefined,
+  sameLap: boolean,
+  now: number,
+  lastError: string | null,
+  lastMarketId: string | undefined,
+): LapEvent[] {
+  const kept = sameLap && prev ? prev.events.filter((e) => history.includes(e.kind as LapPhase)) : [];
+  const seen = new Set(kept.map((e) => e.kind));
+  const extra: LapEvent[] = [];
+  for (const phase of history) {
+    if (seen.has(phase)) continue;
+    extra.push({
+      id: `ev-${phase}`,
+      at: now,
+      kind: phase,
+      label: phaseLabel(phase, lastError),
+      detail: lastError ?? lastMarketId,
+    });
+  }
+  return [...kept, ...extra];
 }
 
 /** BTC/ETH feed is shared across windows. Never copy another market's opening print. */
@@ -203,7 +264,7 @@ export function bookSnapshotFromLive(book: LiveMarketRow["book"] | null | undefi
   const bidDown = book.bidDown ?? [];
   const askDown = book.askDown ?? [];
   if (bidUp.length === 0 && askUp.length === 0 && bidDown.length === 0 && askDown.length === 0) {
-    return EMPTY_BOOK;
+    return { ...EMPTY_BOOK, spread: Number.NaN };
   }
   const spread =
     book.spread != null && Number.isFinite(book.spread)
@@ -227,50 +288,94 @@ export function liveLapFromState(opts: {
   proof: ProofBundle | null;
   now: number;
   history?: HistoryLap[];
+  prev?: LiveLap | null;
 }): LiveLap | null {
   const mapped = mapBackendState(opts.row.state);
   if (!mapped.phase) return null;
-  const cal = calendarFromMarkets(opts.markets, opts.now);
   const lastId = (opts.row.last_market_id ?? "").toLowerCase();
-  const raw = opts.markets.find((m) => m.marketId.toLowerCase() === lastId);
-  const hist =
-    opts.history?.find((h) => h.market_id.toLowerCase() === lastId) ??
-    opts.history?.at(-1);
-  const holdingAsset = assetFromMarket(lastId, hist ?? raw ?? {}, opts.markets);
-  const histOpen = Number(hist?.open_price);
-  const holdingWindow: MarketWindow | null = lastId
-    ? {
-        id: lastId,
-        marketId: lastId,
-        asset: holdingAsset,
-        label: `${holdingAsset} Up or Down`,
-        cadence: cadenceFromInterval(hist?.interval_sec ?? raw?.intervalSec ?? null),
-        openPrice: Number.isFinite(histOpen) && histOpen > 0 ? histOpen : 0,
-        opensAt: opts.now,
-        closesAt: raw?.expiry ? Number(raw.expiry) * 1000 : opts.now,
-        venue: "DreamDEX · Event Contracts",
-        collateral: "tUSDC" as const,
-        live: false,
-      }
-    : null;
-  const market =
-    cal.find((m) => m.marketId.toLowerCase() === lastId) ??
-    (raw ? windowFromMarketRow(raw, opts.now) : holdingWindow ?? cal[0]);
-  if (!market) {
-    return null;
-  }
   const lapIndex = opts.row.lap_index || 0;
+  const prevLap = opts.prev ?? null;
+  const sameLap = Boolean(prevLap && prevLap.number === lapIndex && lapIndex > 0);
+  const freeze = Boolean(
+    sameLap &&
+      prevLap &&
+      prevLap.phase !== "SCAN" &&
+      (isInFlightState(opts.row.state) ||
+        opts.row.state === "DISCOVERING" ||
+        opts.row.state === "REARMING" ||
+        opts.row.state === "ACTIVE"),
+  );
+  const pinnedId = (freeze && prevLap ? prevLap.market.marketId : lastId).toLowerCase();
+  const raw = pinnedId ? opts.markets.find((m) => m.marketId.toLowerCase() === pinnedId) : undefined;
+  const hist =
+    (pinnedId ? opts.history?.find((h) => h.market_id.toLowerCase() === pinnedId) : undefined) ??
+    opts.history?.find((h) => h.lap_index === lapIndex) ??
+    opts.history?.at(-1);
+
+  let market: MarketWindow | null = null;
+  if (pinnedId) {
+    const intervalMs = intervalMsFromSec(hist?.interval_sec ?? raw?.intervalSec);
+    const bounds = windowBounds({
+      intervalMs,
+      expirySec: raw?.expiry,
+      createdAt: hist?.created_at,
+      now: opts.now,
+      prev: sameLap && prevLap ? { opensAt: prevLap.market.opensAt, closesAt: prevLap.market.closesAt } : null,
+    });
+    const asset =
+      freeze && prevLap
+        ? prevLap.market.asset
+        : assetFromMarket(pinnedId, hist ?? raw ?? {}, opts.markets);
+    const histOpen = Number(hist?.open_price);
+    const rawOpen = Number(raw?.openPrice);
+    const openPrice =
+      Number.isFinite(histOpen) && histOpen > 0
+        ? histOpen
+        : Number.isFinite(rawOpen) && rawOpen > 0
+          ? rawOpen
+          : freeze && prevLap
+            ? prevLap.market.openPrice
+            : 0;
+    market = {
+      id: pinnedId,
+      marketId: pinnedId,
+      asset,
+      label: `${asset} Up or Down`,
+      cadence: cadenceFromInterval(hist?.interval_sec ?? raw?.intervalSec ?? null),
+      openPrice,
+      opensAt: bounds.opensAt,
+      closesAt: bounds.closesAt,
+      venue: "DreamDEX · Event Contracts",
+      collateral: "tUSDC",
+      live: raw?.onchainStatus === "Trading",
+    };
+  } else if (!isInFlightState(opts.row.state)) {
+    const cal = calendarFromMarkets(opts.markets, opts.now);
+    market = cal[0] ?? null;
+  }
+  if (!market) return null;
+
   const lastOrder = opts.proof?.orders.find((o) => o.lap_index === lapIndex);
-  const verifiedFill = lastOrder && fillIsVerified(lastOrder.fill_class);
+  const settlement = opts.proof?.settlements.find((s) => s.lap_index === lapIndex);
+  const verifiedFill = Boolean(lastOrder && fillIsVerified(lastOrder.fill_class));
   const side = sideFromKind((lastOrder as { kind?: string | number | null } | undefined)?.kind);
-  const phase: LapPhase =
-    opts.row.state === "ORDER_SUBMITTED" && !verifiedFill
-      ? "ORDER"
-      : opts.row.state === "FILLED" && !verifiedFill
-        ? "ORDER"
-        : mapped.phase;
+  const phase = deriveVisualPhase({
+    backendState: opts.row.state,
+    verifiedFill,
+    now: opts.now,
+    closesAt: market.closesAt,
+    lastError: opts.row.last_error,
+    hasOracleAnswer: hasOracleAnswer({
+      hist,
+      settlement,
+      lastError: opts.row.last_error,
+    }),
+    histState: hist?.state,
+  });
+  const phaseHistory = interpolatePhaseHistory(phase, sameLap ? prevLap?.phaseHistory : undefined, sameLap);
   const windowTotal = Math.max(1, market.closesAt - market.opensAt);
   const elapsed = Math.max(0, Math.min(windowTotal, opts.now - market.opensAt));
+  const left = remainingMs(market.closesAt, opts.now);
   const fillYes = lastOrder?.price ? Number(lastOrder.price) / 1e6 : 0;
   const qty = lastOrder?.quantity ? Number(lastOrder.quantity) / 1e6 : 0;
   const entryPaid = sideEntryFromYes(fillYes, side);
@@ -285,13 +390,15 @@ export function liveLapFromState(opts: {
       : 0;
   const liveUnderlying = fromRow > 0 ? fromRow : liveFeedPrice(opts.markets, market.asset);
   return {
-    number: opts.row.lap_index || 1,
+    number: lapIndex || 1,
     market,
     phase,
-    phaseStartedAt: opts.now,
+    previousPhase: sameLap ? prevLap?.phase ?? null : null,
+    phaseHistory,
+    phaseStartedAt: sameLap && prevLap?.phase === phase ? prevLap.phaseStartedAt : opts.now,
     windowElapsedMs: elapsed,
     windowTotalMs: windowTotal,
-    countdownMs: Math.max(0, market.closesAt - opts.now),
+    countdownMs: Number.isFinite(left) ? left : 0,
     position:
       verifiedFill && lastOrder
         ? {
@@ -316,7 +423,7 @@ export function liveLapFromState(opts: {
           placedAt: Date.parse(lastOrder.created_at) || opts.now,
           status: verifiedFill ? "FILLED" : "PLACED",
           tx: { hash: lastOrder.tx_hash, block: 0, at: Date.parse(lastOrder.created_at) || opts.now },
-          latencyMs: 0, // unmeasured — UI must not render 0ms as a timing
+          latencyMs: 0,
         }
       : null,
     fill:
@@ -332,30 +439,15 @@ export function liveLapFromState(opts: {
         : null,
     price: liveUnderlying,
     probUp: fillYes > 0 ? fillYes : Number.NaN,
-    events: [
-      {
-        id: `ev-${opts.row.state}`,
-        at: opts.now,
-        kind: phase,
-        label: labelForState(opts.row.state, Boolean(verifiedFill)),
-        detail: opts.row.last_error ?? opts.row.last_market_id ?? undefined,
-      },
-    ],
+    events: eventsFromHistory(
+      phaseHistory,
+      prevLap,
+      sameLap,
+      opts.now,
+      opts.row.last_error,
+      opts.row.last_market_id ?? undefined,
+    ),
   };
-}
-
-function labelForState(state: string, verifiedFill: boolean): string {
-  if ((state === "ORDER_SUBMITTED" || state === "FILLED") && !verifiedFill) {
-    return "ORDER ACCEPTED · WAITING FOR FILL";
-  }
-  if (state === "FILLED") return "FILLED";
-  if (state === "PARTIAL_FILL") return "PARTIAL FILL";
-  if (state === "DISCOVERING") return "DISCOVERING";
-  if (state === "PREPARING") return "ORDER PREPARING";
-  if (state === "WAITING_SETTLEMENT") return "WINDOW EXPIRING · SETTLEMENT";
-  if (state === "REDEEMING" || state === "REDEEMED") return "REDEEM";
-  if (state === "REARMING") return "REARMING";
-  return state.replaceAll("_", " ");
 }
 
 function historyOutcome(h: HistoryLap, settle: ProofBundle["settlements"][number] | undefined): Lap["outcome"] | null {
@@ -415,6 +507,13 @@ export function lapsFromHistory(
           : Number.NaN;
     const marketOutcome = marketOutcomeFromSettle(settle, outcome);
     const mkt = markets.find((m) => m.marketId.toLowerCase() === h.market_id.toLowerCase());
+    const intervalMs = intervalMsFromSec(h.interval_sec ?? mkt?.intervalSec);
+    const bounds = windowBounds({
+      intervalMs,
+      expirySec: mkt?.expiry,
+      createdAt: h.created_at,
+      now: placedAt || Date.now(),
+    });
     const histOpen = Number(h.open_price);
     const histClose = Number(h.close_price);
     const openPrice =
@@ -429,14 +528,15 @@ export function lapsFromHistory(
         : Number.isFinite(Number(mkt?.closePrice)) && Number(mkt?.closePrice) > 0
           ? Number(mkt?.closePrice)
           : 0;
+    const sealedAt = settle ? Date.parse(settle.created_at) || 0 : 0;
     return [{
       number: h.lap_index,
       market: {
         asset,
         label: `${asset} Up or Down`,
         marketId: h.market_id,
-        windowStart: placedAt,
-        windowEnd: placedAt,
+        windowStart: bounds.opensAt,
+        windowEnd: bounds.closesAt,
         openPrice,
         closePrice,
         cadence,
@@ -458,7 +558,7 @@ export function lapsFromHistory(
         quantity: qty,
         stake,
         placedAt,
-        status: "FILLED",
+        status: "FILLED" as const,
         tx,
         latencyMs: 0, // unmeasured — UI must not render 0ms as a timing
       },
@@ -478,7 +578,7 @@ export function lapsFromHistory(
         claimTx: settle?.redeem_tx ?? "",
         oracleQuestionId: h.oracle_question_id || mkt?.oracleQuestionId || "",
         status: settle?.redeem_tx ? "VERIFIED" : settle ? "PENDING" : "PENDING",
-        sealedAt: settle ? Date.parse(settle.created_at) || 0 : 0,
+        sealedAt,
       },
     }];
   });
@@ -496,7 +596,7 @@ export function lapsFromHistory(
       lap.streakAfter = run;
     }
   }
-  return built;
+  return built as Lap[];
 }
 
 /** Vault cash + open escrow − realized tape = the bankroll this runner started with. */

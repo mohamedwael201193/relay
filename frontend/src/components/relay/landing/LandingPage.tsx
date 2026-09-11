@@ -12,7 +12,8 @@ import type { MouseEvent } from "react";
 import { ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRelay } from "@/lib/relay/engine/store";
-import { countdown, money } from "@/lib/relay/format";
+import { useCloseCountdown } from "@/lib/relay/live/useCloseCountdown";
+import { money } from "@/lib/relay/format";
 import { RelayLogo } from "../identity/identity";
 import { TickerStrip } from "../core/primitives";
 import { ctaInk, ctaLink, ctaPrimary, focusRing, LandingMotionStyles, Reveal } from "./ui";
@@ -56,8 +57,9 @@ function LandingNavWallet() {
 function LandingNav() {
   const go = useRelay((s) => s.go);
   const liveLap = useRelay((s) => s.liveLap);
+  const clock = useCloseCountdown(liveLap?.market.closesAt, liveLap?.phase);
   const asset = liveLap?.market.asset ?? "BTC";
-  const cd = liveLap ? countdown(liveLap.countdownMs) : "--:--";
+  const cd = liveLap ? clock.label : "--:--";
 
   return (
     <header className="sticky top-0 z-50 border-b border-ink bg-paper">
@@ -116,6 +118,7 @@ function LandingNav() {
 function HeroProofStrip() {
   const liveLap = useRelay((s) => s.liveLap);
   const streak = useRelay((s) => s.streak.current);
+  const clock = useCloseCountdown(liveLap?.market.closesAt, liveLap?.phase);
 
   if (!liveLap) {
     return <div className="mt-10 mlabel text-ink3">WINDOWS ROLLING · 5M / 15M / 1H</div>;
@@ -134,7 +137,7 @@ function HeroProofStrip() {
       {sep}
       <span className="data text-sm text-ink2">{liveLap.market.label.toUpperCase()}</span>
       {sep}
-      <span className="data text-sm text-ink2">{countdown(liveLap.countdownMs)} TO SETTLEMENT</span>
+      <span className="data text-sm text-ink2">{clock.label} TO SETTLEMENT</span>
       {sep}
       <span className="data text-sm font-semibold text-flamedeep">STREAK ×{streak}</span>
     </div>

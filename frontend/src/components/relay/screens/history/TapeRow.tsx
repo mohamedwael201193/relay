@@ -24,7 +24,7 @@ import { explorerTxUrl, oracleQuestionUrl } from "@/lib/relay/config/network";
 import { AssetIcon, FlameMark, VerifiedSeal } from "../../identity/identity";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { MonoRow, OutcomeChip, SideChip, TAPE_GRID } from "./bits";
+import { MonoRow, HashRow, OutcomeChip, SideChip, TAPE_GRID } from "./bits";
 
 interface Props {
   lap: Lap;
@@ -90,11 +90,11 @@ function LapReceipt({ lap }: { lap: Lap }) {
   const outcomeTone =
     lap.marketOutcome === "UP" ? "lime" : lap.marketOutcome === "DOWN" ? "ember" : "foam";
   const colCls =
-    "border-t-2 border-lined/60 pt-4 mt-4 lg:border-t-0 lg:border-l-2 lg:pt-0 lg:pl-5 lg:mt-0";
+    "min-w-0 overflow-hidden border-t-2 border-lined/60 pt-4 mt-4 md:border-t-0 md:[&:nth-child(odd)]:border-t-0 xl:border-l-2 xl:pt-0 xl:pl-5 xl:mt-0 md:[&:nth-child(n+3)]:border-t-2 md:[&:nth-child(n+3)]:pt-4 md:[&:nth-child(n+3)]:mt-4 xl:[&:nth-child(n+3)]:border-t-0 xl:[&:nth-child(n+3)]:pt-0 xl:[&:nth-child(n+3)]:mt-0";
 
   return (
-    <div className="rounded-xl border-2 border-lined bg-panel2/40 p-4">
-      <div className="grid gap-0 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="rounded-xl border-2 border-lined bg-panel2/40 p-4 overflow-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-0 min-w-0">
         {/* 1 — order & fill */}
         <div className="min-w-0">
           <div className="flex items-center justify-between gap-3">
@@ -112,15 +112,7 @@ function LapReceipt({ lap }: { lap: Lap }) {
             <MonoRow label="QUANTITY" value={`${contracts(lap.fill.quantity)} contracts`} />
             <MonoRow label="STAKE" value={money(lap.stake)} />
             <MonoRow label="PLACED" value={clock(lap.order.placedAt)} tone="foam" />
-            <MonoRow
-              label="ORDER TX"
-              value={
-                lap.order.tx.block > 0
-                  ? `${shortHash(lap.order.tx.hash)} · #${lap.order.tx.block}`
-                  : shortHash(lap.order.tx.hash)
-              }
-              tone="foam"
-            />
+            <HashRow label="ORDER TX" hash={lap.order.tx.hash} />
           </div>
         </div>
 
@@ -131,7 +123,11 @@ function LapReceipt({ lap }: { lap: Lap }) {
             <MonoRow label="WINDOW" value={`${hhmm(m.windowStart)}–${hhmm(m.windowEnd)}`} tone="foam" />
             <MonoRow
               label="OPEN → CLOSE"
-              value={`${price(m.openPrice, m.asset)} → ${price(m.closePrice, m.asset)}`}
+              value={
+                m.openPrice > 0 || m.closePrice > 0
+                  ? `${price(m.openPrice, m.asset)} → ${price(m.closePrice, m.asset)}`
+                  : "—"
+              }
             />
             <MonoRow label="MARKET" value={lap.marketOutcome} tone={outcomeTone} />
             <MonoRow
@@ -142,18 +138,20 @@ function LapReceipt({ lap }: { lap: Lap }) {
                     href={oracleQuestionUrl(lap.proof.oracleQuestionId)!}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline decoration-lined underline-offset-2 hover:text-cream"
+                    className="underline decoration-lined underline-offset-2 hover:text-cream break-all"
                   >
-                    {lap.proof.oracleQuestionId}
+                    {shortHash(lap.proof.oracleQuestionId)}
                   </a>
+                ) : lap.proof.oracleQuestionId ? (
+                  shortHash(lap.proof.oracleQuestionId)
                 ) : (
                   "—"
                 )
               }
               tone="foam"
             />
-            <MonoRow label="SETTLE TX" value={shortHash(lap.proof.settlementTx)} tone="foam" />
-            <MonoRow label={claimLabel} value={shortHash(lap.proof.claimTx)} tone="foam" />
+            <HashRow label="SETTLE TX" hash={lap.proof.settlementTx} />
+            <HashRow label={claimLabel} hash={lap.proof.claimTx} />
           </div>
         </div>
 
@@ -179,9 +177,9 @@ function LapReceipt({ lap }: { lap: Lap }) {
             </div>
           </div>
           <div className="mt-3 flex items-center justify-between gap-3 border-t border-lined/70 pt-3">
-            <span className="mlabel text-foam/60">
-              SEALED {clock(lap.proof.sealedAt)} · SOMNIA REACTIVITY
-            </span>
+          <span className="mlabel text-foam/60 min-w-0 truncate">
+            SEALED {lap.proof.sealedAt > 0 ? clock(lap.proof.sealedAt) : "—"} · SOMNIA REACTIVITY
+          </span>
             <InspectLink hash={lap.proof.fillTx || lap.order.tx.hash} />
           </div>
         </div>

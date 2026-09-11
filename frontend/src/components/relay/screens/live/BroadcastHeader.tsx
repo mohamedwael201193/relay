@@ -10,28 +10,30 @@
 import { useRelay } from "@/lib/relay/engine/store";
 import { LiveDot, PhaseStepper } from "@/components/relay/core/primitives";
 import { AssetIcon } from "@/components/relay/identity/identity";
-import { countdown as fmtCountdown } from "@/lib/relay/format";
 import { cn } from "@/lib/utils";
+import { useCloseCountdown } from "@/lib/relay/live/useCloseCountdown";
 import { WindowTrack } from "./WindowTrack";
 
 export function BroadcastHeader({ className }: { className?: string }) {
   const lap = useRelay((s) => s.liveLap);
+  const now = useRelay((s) => s.now);
+  const clock = useCloseCountdown(lap?.market.closesAt, lap?.phase);
   if (!lap) return null;
 
-  const { phase, countdownMs, windowElapsedMs, windowTotalMs, market, number } = lap;
-  const settled =
-    phase === "ORACLE" || phase === "RESULT" || phase === "CLAIM" || phase === "REARM";
-  const label = settled ? "00:00" : fmtCountdown(countdownMs);
+  const { phase, market, number } = lap;
+  const windowTotalMs = Math.max(1, market.closesAt - market.opensAt);
+  const windowElapsedMs = Math.max(0, Math.min(windowTotalMs, now - market.opensAt));
+  const label = clock.closed ? "CLOSED" : clock.label;
 
   /* countdown voice: lime cruising · flame closing · ember pulse in the last 10s */
-  const color = settled
+  const color = clock.closed
     ? "#e8d5a8"
     : phase === "CLOSING"
       ? "#ffb224"
-      : countdownMs <= 10_000
+      : clock.remainingMs <= 10_000
         ? "#f0512a"
         : "#aae83c";
-  const pulse = !settled && phase !== "CLOSING" && countdownMs <= 10_000;
+  const pulse = !clock.closed && phase !== "CLOSING" && clock.remainingMs <= 10_000;
 
   return (
     <header className={cn("border-b-2 border-lined bg-panel/40 px-4 sm:px-6 py-4", className)}>
@@ -74,7 +76,7 @@ export function BroadcastHeader({ className }: { className?: string }) {
 
       {/* row 3 — phase stepper */}
       <div className="mt-1">
-        <PhaseStepper phase={phase} />
+        <PhaseStepper phase={phase} history={lap.phaseHistory} />
       </div>
     </header>
   );

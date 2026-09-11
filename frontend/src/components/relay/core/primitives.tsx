@@ -177,13 +177,24 @@ const PHASES: { key: LapPhase; short: string }[] = [
   { key: "REARM", short: "RE-ARM" },
 ];
 
-export function PhaseStepper({ phase, dark = true }: { phase: LapPhase; dark?: boolean }) {
+export function PhaseStepper({
+  phase,
+  history,
+  dark = true,
+}: {
+  phase: LapPhase;
+  history?: LapPhase[];
+  dark?: boolean;
+}) {
   const activeIdx = PHASES.findIndex((p) => p.key === phase);
+  const reached = new Set(
+    history && history.length ? history : PHASES.slice(0, Math.max(0, activeIdx) + 1).map((p) => p.key),
+  );
   return (
     <ol className="flex items-center gap-1 overflow-x-auto scroll-thin pb-1" aria-label="Lap phase">
       {PHASES.map((p, i) => {
-        const done = i < activeIdx;
         const active = i === activeIdx;
+        const done = !active && (reached.has(p.key) || i < activeIdx);
         return (
           <li key={p.key} className="flex items-center gap-1 shrink-0">
             <span

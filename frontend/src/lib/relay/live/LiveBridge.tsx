@@ -136,7 +136,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     useRelay.setState({
       ...ownerBoundReset(),
       arena: mappedArena,
-      boosts: relationshipsFromArenaBoosts(arena.boosts ?? [], mappedArena),
+      boosts: relationshipsFromArenaBoosts("boosts" in arena ? arena.boosts ?? [] : [], mappedArena),
     });
     return;
   }
@@ -149,7 +149,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     relayApi.arena().catch(() => ({ runners: [] })),
   ]);
   let row =
-    live && "vault" in live
+    live && "vault" in live && "lastMarketId" in live
       ? { ...mine, ...live, vault: live.vault, state: live.state, last_market_id: live.lastMarketId, last_error: live.lastError, lap_index: live.lapIndex }
       : mine;
   if (!row) return;
@@ -223,7 +223,7 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
   );
   const lapNotes = notificationsFromLaps(prev.laps, mappedLaps);
   const mappedArena = arenaFromRows(arena.runners ?? [], vault);
-  const mappedBoosts = relationshipsFromArenaBoosts(arena.boosts ?? [], mappedArena);
+  const mappedBoosts = relationshipsFromArenaBoosts("boosts" in arena ? arena.boosts ?? [] : [], mappedArena);
   const boostNotes = notificationsFromBoosts(prev.boosts, mappedBoosts, vault);
   const lifeNotes = notificationsFromLifecycle({
     prevError: prev.backendLastError,
@@ -233,24 +233,22 @@ async function refreshRunner(net: NetworkConfig, owner: string, vaultHint?: stri
     lapIndex: row.lap_index,
   });
   const incomingNotes = [...boostNotes, ...lapNotes, ...lifeNotes];
+  const lastId = (row.last_market_id ?? "").toLowerCase();
   const liveLap = liveLapFromState({
     row,
     markets: marketsRows,
     proof: proofBundle,
     now,
     history: historyLaps,
+    prev: prev.liveLap,
   });
-  const lastId = (row.last_market_id ?? "").toLowerCase();
-  const histRow = marketsRows.find((m) => m.marketId.toLowerCase() === lastId);
+  const activeMarketId = (liveLap?.market.marketId ?? lastId).toLowerCase();
+  const histRow = marketsRows.find((m) => m.marketId.toLowerCase() === activeMarketId);
   const priceHistory = (
     histRow?.priceHistory?.filter((p) => Number.isFinite(p.p) && p.p > 0) ??
     (liveLap ? liveFeedHistory(marketsRows, liveLap.market.asset) : [])
   );
-  const book = bookSnapshotFromLive(
-    histRow?.book ??
-      marketsRows.find((m) => m.marketId.toLowerCase() === (liveLap?.market.marketId ?? "").toLowerCase())
-        ?.book,
-  );
+  const book = bookSnapshotFromLive(histRow?.book);
   useRelay.setState({
     vaultAddress: vault,
     backendState: row.state,
@@ -440,8 +438,9 @@ export function LiveBridge() {
           const stop = parseUnits(String(cfg.stopLoss), net.decimals);
           if (!vault) {
             phase("Creating vault", "signing");
-            const auth = await signAction("provision", "new", owner, walletClient);
-            const created = await relayApi.provision({
+          const auth = await signAction("provision", "new", owner, walletClient);
+          phase("Provisioning vault", "submitting");
+          const created = await relayApi.provision({
               ...auth,
               budget: cfg.budget,
               stopLoss: cfg.stopLoss,
@@ -522,14 +521,16 @@ export function LiveBridge() {
             }
           }
           const authStart = await signAction("start", vault, owner, walletClient);
+          phase("Starting runner", "confirming");
           await relayApi.start(vault, authStart);
-          useRelay.setState({ vaultAddress: vault, startBankroll: cfg.budget, boostIntent: null });
+          const stillIntent = useRelay.getState().boostIntent;
+          useRelay.setState({ vaultAddress: vault, startBankroll: cfg.budget, boostIntent: stillIntent });
           await readWalletBalances(net, owner);
           await refreshRunner(net, owner, vault);
-          useRelay.getState().go("app", "live");
+          phase("Confirmed", "confirmed");
+          if (!stillIntent) useRelay.getState().go("app", "live");
         } catch (e) {
           phase("Failed", "failed");
-          useRelay.setState({ boostIntent: null });
           reportApiError((e as Error).message);
         }
       },
@@ -707,7 +708,7 @@ export function LiveBridge() {
         if (cancelled) return;
         const myVault = useRelay.getState().vaultAddress;
         const mappedArena = arenaFromRows(arena.runners ?? [], myVault);
-        const mappedBoosts = relationshipsFromArenaBoosts(arena.boosts ?? [], mappedArena);
+        const mappedBoosts = relationshipsFromArenaBoosts("boosts" in arena ? arena.boosts ?? [] : [], mappedArena);
         const boostNotes = notificationsFromBoosts(useRelay.getState().boosts, mappedBoosts, myVault);
         useRelay.setState((s) => ({
           arena: mappedArena,
@@ -790,8 +791,8 @@ export function LiveBridge() {
     })();
 
     let esLive = false;
-    const poll = window.setInterval(() => {
-      if (esLive) return;
+    let esRetry: number | null = null;
+    const pull = () => {
       const nextOwner = ownerFromPrivy({ wallets: ctx.current.wallets, user: ctx.current.user }) ?? owner;
       relayApi
         .network()
@@ -801,29 +802,47 @@ export function LiveBridge() {
           await refreshRunner(net, nextOwner);
         })
         .catch((e) => reportApiError((e as Error).message));
+    };
+    const poll = window.setInterval(() => {
+      if (esLive) return;
+      pull();
     }, 8000);
-    try {
-      es = new EventSource(eventsUrl());
-      es.onopen = () => {
-        esLive = true;
-      };
-      es.addEventListener("heartbeat", () => {
-        const nextOwner = ownerFromPrivy({ wallets: ctx.current.wallets, user: ctx.current.user }) ?? owner;
-        relayApi
-          .network()
-          .catch(() => publicNetwork())
-          .then(async (net) => {
-            await readWalletBalances(net, nextOwner);
-            await refreshRunner(net, nextOwner);
-          })
-          .catch(() => undefined);
-      });
-    } catch {
-      /* EventSource optional */
-    }
+    const clock = window.setInterval(() => {
+      useRelay.setState({ now: Date.now() });
+    }, 1000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") pull();
+    };
+    const onOnline = () => pull();
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVis);
+    const attachEs = () => {
+      try {
+        es?.close();
+        es = new EventSource(eventsUrl());
+        es.onopen = () => {
+          esLive = true;
+          pull();
+        };
+        es.onerror = () => {
+          esLive = false;
+          es?.close();
+          if (cancelled) return;
+          esRetry = window.setTimeout(attachEs, 3000);
+        };
+        es.addEventListener("heartbeat", () => pull());
+      } catch {
+        /* EventSource optional */
+      }
+    };
+    attachEs();
     return () => {
       cancelled = true;
       window.clearInterval(poll);
+      window.clearInterval(clock);
+      if (esRetry) window.clearTimeout(esRetry);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVis);
       es?.close();
     };
   }, [ready, authenticated, walletsReady, owner, createWallet]);

@@ -548,13 +548,9 @@ describe("bookSnapshotFromLive", () => {
     });
     expect(snap.bidUp[0]).toEqual({ price: 0.47, size: 2 });
     expect(snap.spread).toBeCloseTo(0.02);
-    expect(bookSnapshotFromLive({ bidUp: [], askUp: [], bidDown: [], askDown: [], spread: null })).toEqual({
-      bidUp: [],
-      askUp: [],
-      bidDown: [],
-      askDown: [],
-      spread: 0,
-    });
+    const empty = bookSnapshotFromLive({ bidUp: [], askUp: [], bidDown: [], askDown: [], spread: null });
+    expect(empty.bidUp).toEqual([]);
+    expect(Number.isNaN(empty.spread)).toBe(true);
   });
 });
 
@@ -637,5 +633,123 @@ describe("arenaFromRows", () => {
     const [entry] = arenaFromRows([row], row.vault);
     expect(entry.status).toBe("PAUSED");
     expect(entry.followers).toBe(0);
+  });
+});
+
+describe("active lap market pin", () => {
+  const btcRow = {
+    id: "r",
+    vault: "0xabc",
+    owner: "0x1",
+    operator: "0x1",
+    state: "WAITING_SETTLEMENT",
+    chain_id: 50312,
+    last_error: null as string | null,
+    last_market_id: "0xbtc",
+    lap_index: 1,
+  };
+  const markets: LiveMarketRow[] = [
+    {
+      marketId: "0xeth",
+      asset: "ETH",
+      intervalSec: "900",
+      expiry: String(Math.floor(Date.now() / 1000) + 500),
+      onchainStatus: "Trading",
+      pool: "0x1",
+      livePrice: 2450,
+      openPrice: 2440,
+    },
+  ];
+  const history: HistoryLap[] = [
+    {
+      id: "1",
+      lap_index: 1,
+      market_id: "0xbtc",
+      pool: null,
+      state: "FILLED",
+      correlation_id: null,
+      created_at: new Date(Date.now() - 120_000).toISOString(),
+      asset: "BTC",
+      interval_sec: "900",
+      open_price: "76850",
+    },
+  ];
+
+  it("does not adopt calendar[0] ETH while lap 1 is still armed to BTC", () => {
+    const lap = liveLapFromState({
+      row: btcRow,
+      markets,
+      proof: { orders: [], settlements: [], records: [] },
+      now: Date.now(),
+      history,
+    });
+    expect(lap?.number).toBe(1);
+    expect(lap?.market.asset).toBe("BTC");
+    expect(lap?.market.marketId).toBe("0xbtc");
+  });
+
+  it("keeps the pinned BTC market if last_market_id flickers to ETH on the same lap index", () => {
+    const first = liveLapFromState({
+      row: btcRow,
+      markets,
+      proof: { orders: [], settlements: [], records: [] },
+      now: Date.now(),
+      history,
+    });
+    const second = liveLapFromState({
+      row: { ...btcRow, last_market_id: "0xeth" },
+      markets,
+      proof: { orders: [], settlements: [], records: [] },
+      now: Date.now(),
+      history,
+      prev: first,
+    });
+    expect(second?.number).toBe(1);
+    expect(second?.market.asset).toBe("BTC");
+    expect(second?.market.marketId).toBe("0xbtc");
+  });
+
+  it("marks CLOSE after the window timestamp, then interpolates CLOSE+ORACLE on a RESULT hop", () => {
+    const now = Date.now();
+    const closed = liveLapFromState({
+      row: btcRow,
+      markets: [
+        {
+          marketId: "0xbtc",
+          asset: "BTC",
+          intervalSec: "900",
+          expiry: String(Math.floor(now / 1000) - 5),
+          onchainStatus: "Locked",
+          pool: "0x1",
+        },
+      ],
+      proof: { orders: [], settlements: [], records: [] },
+      now,
+      history,
+    });
+    expect(closed?.phase).toBe("CLOSING");
+    expect(closed?.phaseHistory).toContain("CLOSING");
+
+    const settled = liveLapFromState({
+      row: { ...btcRow, state: "SETTLED_WIN" },
+      markets: [
+        {
+          marketId: "0xbtc",
+          asset: "BTC",
+          intervalSec: "900",
+          expiry: String(Math.floor(now / 1000) - 5),
+          onchainStatus: "Resolved",
+          pool: "0x1",
+        },
+      ],
+      proof: { orders: [], settlements: [], records: [] },
+      now,
+      history: [{ ...history[0]!, state: "SETTLED_WIN" }],
+      prev: closed,
+    });
+    expect(settled?.phase).toBe("RESULT");
+    expect(settled?.phaseHistory).toEqual(
+      expect.arrayContaining(["HOLD", "CLOSING", "ORACLE", "RESULT"]),
+    );
   });
 });

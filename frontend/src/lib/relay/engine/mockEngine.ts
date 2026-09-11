@@ -249,6 +249,7 @@ function initialState() {
     backendLastError: null,
     apiError: null,
     txPhase: null,
+    boostIntent: null,
   };
 }
 

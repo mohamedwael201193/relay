@@ -129,13 +129,15 @@ export function AnalyticsScreen() {
     const buckets = [0, 1, 2, 3, 4, 5].map((b) => {
       const inb = asc.filter((l) => Math.floor((l.settledAt - start) / (4 * 3_600_000)) === b);
       const wins = inb.filter((l) => l.outcome === "WIN").length;
+      const losses = inb.filter((l) => l.outcome === "LOSS").length;
+      const decidedN = wins + losses;
       return {
         bucket: b,
         label: `${String(9 + b).padStart(2, "0")}:00`,
         laps: inb.length,
         wins,
         pnl: +inb.filter((l) => Number.isFinite(l.pnl)).reduce((s, l) => s + l.pnl, 0).toFixed(2),
-        winRate: inb.length ? wins / inb.length : 0,
+        winRate: decidedN > 0 ? wins / decidedN : Number.NaN,
       };
     });
     return buckets.filter((b) => b.laps > 0);

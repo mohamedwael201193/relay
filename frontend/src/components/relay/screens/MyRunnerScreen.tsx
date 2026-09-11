@@ -25,11 +25,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { selectLivePnl, selectNextStake, selectPnl, useRelay } from "@/lib/relay/engine/store";
 import { isOpsVault } from "@/lib/relay/config/network";
 import { isLiveMode } from "@/lib/relay/live/mode";
+import { useCloseCountdown } from "@/lib/relay/live/useCloseCountdown";
 import type { Lap, LiveLap, Runner, RunnerStatus } from "@/lib/relay/types";
 import {
   cents,
   contracts,
-  countdown,
   duration,
   money,
   pct,
@@ -236,6 +236,7 @@ function RingArea({ status }: { status: RunnerStatus }) {
   const restingAsset = useRelay((s) => s.config.assets[0] ?? "BTC");
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const size = isDesktop ? 340 : 260;
+  const clock = useCloseCountdown(liveLap?.market.closesAt, liveLap?.phase);
 
   if (!liveLap) {
     return (
@@ -278,8 +279,9 @@ function RingArea({ status }: { status: RunnerStatus }) {
     );
   }
 
-  const progress =
-    liveLap.windowTotalMs > 0 ? liveLap.windowElapsedMs / liveLap.windowTotalMs : 0;
+  const progress = liveLap.windowTotalMs > 0
+    ? Math.max(0, Math.min(1, (Date.now() - liveLap.market.opensAt) / liveLap.windowTotalMs))
+    : 0;
 
   return (
     <div className="flex w-full flex-col items-center">
@@ -290,7 +292,7 @@ function RingArea({ status }: { status: RunnerStatus }) {
       <div className="mt-4 flex justify-center">
         <LapRing
           progress={progress}
-          countdownLabel={countdown(liveLap.countdownMs)}
+          countdownLabel={clock.label}
           phase={liveLap.phase}
           asset={liveLap.market.asset}
           side={liveLap.position?.side ?? null}
@@ -299,7 +301,7 @@ function RingArea({ status }: { status: RunnerStatus }) {
         />
       </div>
       <div className="mt-5 w-full max-w-[420px]">
-        <PhaseStepper phase={liveLap.phase} />
+        <PhaseStepper phase={liveLap.phase} history={liveLap.phaseHistory} />
       </div>
       <div className="mt-3.5 mlabel text-center text-flame" aria-live="polite">
         {NEXT_ACTION[liveLap.phase] ?? "RIDING THE WINDOW…"}
