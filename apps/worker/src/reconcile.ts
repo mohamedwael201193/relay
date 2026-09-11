@@ -1,6 +1,7 @@
 import {
   assertShannonExecution,
   collateralCostForKind,
+  FRESH_WINDOW_FRAC,
   filledOrderNeedsSettle,
   marketOracleMeta,
   readLapSettledProofTx,
@@ -369,6 +370,7 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
       vault,
       targetStakeRaw,
       minRemainingFrac: 0.4,
+      preferFreshFrac: FRESH_WINDOW_FRAC,
     });
     const attempt = placed.ioc ?? placed.postOnly;
     if (!attempt) {
@@ -442,9 +444,9 @@ export async function reconcileOnce(account: LocalAccount): Promise<{ action: st
     const daily =
       msg.includes("DailyLossExceeded") || /realizedLossToday/.test(msg);
     if (msg.includes("no live Trading market")) {
-      await go("DISCOVERING", { lastError: "waiting_book" });
-      log("waiting_book", { runnerId: runner.id, error: msg.slice(0, 200) });
-      return { action: "waiting_book", runnerId: runner.id };
+      await go("DISCOVERING", { lastError: "waiting_next_window" });
+      log("waiting_next_window", { runnerId: runner.id, error: msg.slice(0, 200) });
+      return { action: "waiting_next_window", runnerId: runner.id };
     }
     await go("ERROR", { lastError: (daily ? "daily_loss_exceeded" : msg).slice(0, 500) });
     log("error", { runnerId: runner.id, error: msg, parked: daily });

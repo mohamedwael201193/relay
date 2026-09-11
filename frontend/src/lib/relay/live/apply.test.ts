@@ -846,8 +846,11 @@ describe("active lap market pin", () => {
       now,
       history,
     });
-    expect(closed?.phase).toBe("CLOSING");
+    expect(closed?.phase).toBe("ORACLE");
     expect(closed?.phaseHistory).toContain("CLOSING");
+    expect(closed?.oracleWait?.status).toBe("waiting_answer");
+    expect(closed?.events.find((e) => e.kind === "ORACLE")?.label).toBe("WAITING FOR ANSWER");
+    expect(closed?.events.find((e) => e.kind === "SCAN")?.detail).toBeUndefined();
 
     const settled = liveLapFromState({
       row: { ...btcRow, state: "SETTLED_WIN" },

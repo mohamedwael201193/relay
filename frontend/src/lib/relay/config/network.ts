@@ -56,11 +56,14 @@ export function explorerTxUrl(hash: string | undefined | null): string | null {
   return `${SHANNON_PUBLIC.explorer}/tx/${hash}`;
 }
 
+export function oracleHost(chainId = publicEnv().chainId): string {
+  return chainId === SHANNON_CHAIN_ID ? "dev.oracle.somnia.host" : "prd.oracle.somnia.host";
+}
+
 /** Official Somnia oracle graph for this chain's question id. Shannon ids collide on prd.oracle. */
 export function oracleQuestionUrl(id: string | undefined | null, chainId = publicEnv().chainId): string | null {
   if (!id || id === "0") return null;
-  const host = chainId === SHANNON_CHAIN_ID ? "dev.oracle.somnia.host" : "prd.oracle.somnia.host";
-  return `https://${host}/questions/${id}?view=graph`;
+  return `https://${oracleHost(chainId)}/questions/${id}?view=graph`;
 }
 
 export function publicEnv() {

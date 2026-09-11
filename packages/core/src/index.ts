@@ -36,7 +36,17 @@ export {
   runVaultFunding,
 } from "./vaultOps.js";
 export { runLiveOrder, runLiveOrderFromKey, type RunnerBias } from "./execute.js";
-export { discoverLiveMarket, normalizeExpireNs, intervalMatches, assetMatches } from "./discover.js";
+export {
+  discoverLiveMarket,
+  normalizeExpireNs,
+  intervalMatches,
+  assetMatches,
+  rankLivePicks,
+  isFreshWindow,
+  remainingSecFromExpire,
+  HEADROOM_REMAINING_FRAC,
+  FRESH_WINDOW_FRAC,
+} from "./discover.js";
 export { assertShannonExecution, mainnetTradingEnabled, protocolChecksFailed } from "./gates.js";
 export {
   pickOwner,

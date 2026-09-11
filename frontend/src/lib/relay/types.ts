@@ -276,6 +276,43 @@ export interface LiveLap {
   /** live UP-probability implied by the model */
   probUp: number;
   events: LapEvent[];
+  /** Live oracle wait copy. Absent when the window is still open. */
+  oracleWait?: OracleWaitView | null;
+  /** Candidate successor. Never the active lap identity. */
+  nextWindow?: NextWindowHint | null;
+  /** Present when this lap joined after the market already opened. */
+  joinHint?: JoinHint | null;
+  /** Measured close→settle legs. Null means not observed — never display as 0ms. */
+  settlementTiming?: SettlementTiming | null;
+}
+
+export type OracleWaitStatus = "waiting_answer" | "answer_received" | "settling" | "resolved";
+
+export interface OracleWaitView {
+  status: OracleWaitStatus;
+  delayed: boolean;
+  questionId: string | null;
+  host: string;
+  closedAgoMs: number;
+  expectedAt: number;
+  lastEventAt: number;
+}
+
+export interface NextWindowHint {
+  startsAt: number;
+  remainingMs: number;
+  cadence: WindowCadence;
+  kind: "opens" | "after_current" | "joinable";
+}
+
+export interface JoinHint {
+  joinedAt: number;
+}
+
+export interface SettlementTiming {
+  closeToSettleMs: number | null;
+  settleToRedeemMs: number | null;
+  redeemToRearmMs: number | null;
 }
 
 /* ── results ────────────────────────────────────────────────── */

@@ -6,15 +6,16 @@
  * SCAN (radar) → ARMED (decision) → ORDER (in flight) → FILL (receipt) → HOLD (position).
  */
 
+import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, Radar } from "lucide-react";
 import { selectLivePnl, useRelay } from "@/lib/relay/engine/store";
 import { Panel } from "@/components/relay/core/primitives";
 import { AssetIcon, DownMark, UpMark } from "@/components/relay/identity/identity";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cents, contracts, hhmm, money, shortHash, signed } from "@/lib/relay/format";
-import { explorerTxUrl } from "@/lib/relay/config/network";
-import type { FillRecord, LapPhase, MarketWindow, OrderRecord, Position, Side } from "@/lib/relay/types";
+import { cents, clock, contracts, countdown, hhmm, money, shortHash, signed } from "@/lib/relay/format";
+import { explorerTxUrl, oracleQuestionUrl } from "@/lib/relay/config/network";
+import type { FillRecord, LapPhase, LiveLap, MarketWindow, NextWindowHint, OrderRecord, Position, Side } from "@/lib/relay/types";
 import { cn } from "@/lib/utils";
 import { useFlash } from "./helpers";
 
@@ -25,6 +26,7 @@ export function OrderLifecycle({ className }: { className?: string }) {
   const decision = useRelay((s) => s.decision);
   const calendar = useRelay((s) => s.calendar);
   const latencyMs = useRelay((s) => s.latencyMs);
+  const now = useRelay((s) => s.now);
   const livePnl = selectLivePnl(lap);
   const pnlFlash = useFlash(livePnl);
 
@@ -63,7 +65,7 @@ export function OrderLifecycle({ className }: { className?: string }) {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
           >
-            {stage === "scan" && <ScanBody calendar={calendar} />}
+            {stage === "scan" && <ScanBody calendar={calendar} nextWindow={lap.nextWindow} now={now} />}
             {stage === "armed" &&
               (decision ? <ArmedBody decision={decision} /> : <PreparingBody />)}
             {stage === "order" &&
@@ -79,18 +81,13 @@ export function OrderLifecycle({ className }: { className?: string }) {
             {stage === "close" && (
               <SettleStage
                 title="WINDOW CLOSED"
-                detail="No more entries. Waiting for the oracle answer."
+                detail="NO MORE ENTRIES"
                 position={position}
                 pnl={livePnl}
               />
             )}
             {stage === "oracle" && (
-              <SettleStage
-                title="WAITING FOR RESOLUTION"
-                detail="Oracle answering · settles 0 or 1."
-                position={position}
-                pnl={livePnl}
-              />
+              <OracleWaitBody lap={lap} position={position} pnl={livePnl} now={now} />
             )}
             {stage === "result" && (
               <SettleStage
@@ -110,8 +107,8 @@ export function OrderLifecycle({ className }: { className?: string }) {
             )}
             {stage === "rearm" && (
               <SettleStage
-                title="RE-ARM"
-                detail="Baton pass — next window is a new lap identity."
+                title="RE-ARMING"
+                detail={nextWindowDetail(lap.nextWindow, now)}
                 position={position}
                 pnl={livePnl}
               />
@@ -132,7 +129,7 @@ function Spec({
   className,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   tone?: "UP" | "DOWN";
   className?: string;
 }) {
@@ -162,7 +159,115 @@ function PreparingBody() {
 
 /* ── SCAN: radar + calendar ─────────────────────────────────── */
 
-function ScanBody({ calendar }: { calendar: MarketWindow[] }) {
+function nextWindowDetail(hint: NextWindowHint | null | undefined, now: number): string {
+  if (!hint) return "NEXT WINDOW — waiting for an eligible 15m book. Not the active lap.";
+  if (hint.kind === "joinable") return `NEXT WINDOW OPEN · ${hint.cadence.toUpperCase()} · arming a new lap identity`;
+  const left = Math.max(0, hint.startsAt - now);
+  return `NEXT WINDOW STARTS IN ${countdown(left)} · ${hint.cadence.toUpperCase()}`;
+}
+
+function OracleWaitBody({
+  lap,
+  position,
+  pnl,
+  now,
+}: {
+  lap: LiveLap;
+  position: Position | null;
+  pnl: number;
+  now: number;
+}) {
+  const wait = lap.oracleWait;
+  const status = wait?.status ?? "waiting_answer";
+  const headline =
+    status === "settling" ? "SETTLEMENT PROCESSING" : status === "answer_received" ? "ANSWER RECEIVED" : "WAITING FOR ANSWER";
+  const qUrl = oracleQuestionUrl(wait?.questionId);
+  const closeToSettle = lap.settlementTiming?.closeToSettleMs;
+  return (
+    <div>
+      <div className="flex items-center gap-3 flex-wrap">
+        {position ? (
+          <span
+            className={cn(
+              "data font-bold text-sm px-2.5 py-1 rounded-md border-2 border-graphite",
+              position.side === "UP" ? "bg-lime text-graphite" : "bg-ember text-cream",
+            )}
+          >
+            {position.side === "UP" ? "▲ UP" : "▼ DOWN"}
+          </span>
+        ) : null}
+        <span className="data text-lg font-bold wide text-cream tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+          ORACLE
+        </span>
+        {wait?.delayed ? (
+          <span className="mlabel px-2 py-1 rounded-md border border-lined text-flame">RESOLUTION DELAYED</span>
+        ) : null}
+      </div>
+      <div className="mlabel text-foam mt-2">{headline}</div>
+      <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
+        <Spec
+          label="QUESTION"
+          value={
+            wait?.questionId ? (
+              qUrl ? (
+                <a
+                  href={qUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-lined underline-offset-2 hover:decoration-cream"
+                >
+                  #{wait.questionId}
+                </a>
+              ) : (
+                `#${wait.questionId}`
+              )
+            ) : (
+              "—"
+            )
+          }
+        />
+        <Spec label="HOST" value={wait?.host ?? "—"} />
+        <Spec label="CLOSED" value={wait ? `${countdown(wait.closedAgoMs)} AGO` : "—"} />
+        <Spec
+          label="STATUS"
+          value={
+            wait?.delayed
+              ? "DELAYED"
+              : status === "waiting_answer"
+                ? "WAITING"
+                : status.replaceAll("_", " ").toUpperCase()
+          }
+        />
+      </div>
+      {wait ? (
+        <div className="mt-3 mlabel text-foam/80 flex flex-wrap gap-x-4 gap-y-1">
+          <span>EXPECTED {clock(wait.expectedAt)}</span>
+          <span>CURRENT {clock(now)}</span>
+          {closeToSettle != null ? <span>CLOSE→SETTLE {countdown(closeToSettle)}</span> : null}
+        </div>
+      ) : null}
+      {position ? (
+        <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
+          <Spec label={`ENTRY · ${position.side} TERMS`} value={cents(position.entryPrice)} />
+          <Spec label="STAKE" value={money(position.stake)} />
+          <Spec label="QUANTITY" value={`${contracts(position.quantity)} CT`} />
+          <Spec label="UNSETTLED PNL" value={Number.isFinite(pnl) ? signed(pnl) : "—"} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ScanBody({
+  calendar,
+  nextWindow,
+  now,
+}: {
+  calendar: MarketWindow[];
+  nextWindow: NextWindowHint | null | undefined;
+  now: number;
+}) {
+  const waiting = nextWindow && nextWindow.kind !== "joinable" && nextWindow.remainingMs > 0;
   return (
     <div>
       <div className="flex items-center gap-4">
@@ -183,9 +288,13 @@ function ScanBody({ calendar }: { calendar: MarketWindow[] }) {
             className="data text-lg font-bold wide text-cream tracking-tight"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            SCANNING WINDOWS…
+            {waiting ? "NEXT WINDOW" : "SCANNING WINDOWS…"}
           </div>
-          <div className="mlabel text-foam mt-1">DREAMDEX EVENT CONTRACTS · NEXT 3</div>
+          <div className="mlabel text-foam mt-1">
+            {waiting
+              ? `STARTS IN ${countdown(Math.max(0, nextWindow.startsAt - now))} · ${nextWindow.cadence.toUpperCase()}`
+              : "DREAMDEX EVENT CONTRACTS · NEXT 3"}
+          </div>
         </div>
       </div>
 
@@ -196,7 +305,9 @@ function ScanBody({ calendar }: { calendar: MarketWindow[] }) {
             <span className="mlabel text-cream/90">{w.asset} UP OR DOWN</span>
             <span className="mlabel text-foam/60">{w.cadence.toUpperCase()}</span>
             {i === 0 && <span className="mlabel text-flame">NEXT</span>}
-            <span className="ml-auto data text-xs text-foam">OPENS {hhmm(w.opensAt)}</span>
+            <span className="ml-auto data text-xs text-foam">
+              {w.opensAt > now ? `OPENS ${hhmm(w.opensAt)}` : `LIVE · ${countdown(Math.max(0, w.closesAt - now))} LEFT`}
+            </span>
           </div>
         ))}
         {calendar.length === 0 && (

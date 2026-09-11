@@ -1,7 +1,7 @@
 import type { AppNotification, ArenaRunner, AssetId, BookSnapshot, BoostRelationship, Lap, LapEvent, LapPhase, LiveLap, MarketWindow, Outcome, Runner, WindowCadence } from "../types";
 import { fillIsVerified, mapBackendState } from "../mapping";
 import type { ArenaBoost, ArenaRow, HistoryLap, LiveMarketRow, ProofBundle, RunnerRow } from "../api/client";
-import { EMPTY_BOOK } from "../config/network";
+import { EMPTY_BOOK, oracleHost } from "../config/network";
 import {
   deriveVisualPhase,
   hasOracleAnswer,
@@ -9,6 +9,10 @@ import {
   interpolatePhaseHistory,
   intervalMsFromSec,
   isInFlightState,
+  joinHint,
+  measuredCloseToSettleMs,
+  nextEligibleWindow,
+  oracleWaitView,
   remainingMs,
   windowBounds,
 } from "./activeLap";
@@ -188,10 +192,11 @@ function windowFromMarketRow(r: LiveMarketRow, now: number): MarketWindow {
   };
 }
 
-function phaseLabel(phase: LapPhase, lastError: string | null): string {
+function phaseLabel(phase: LapPhase, lastError: string | null, answered: boolean): string {
+  const waitingNext = lastError === "waiting_book" || lastError === "waiting_next_window";
   switch (phase) {
     case "SCAN":
-      return "SCANNING WINDOWS";
+      return waitingNext ? "WAITING FOR NEXT WINDOW" : "SCANNING WINDOWS";
     case "ARMED":
       return "DECISION PREPARED";
     case "ORDER":
@@ -201,18 +206,33 @@ function phaseLabel(phase: LapPhase, lastError: string | null): string {
     case "HOLD":
       return "POSITION LIVE";
     case "CLOSING":
-      return "WINDOW CLOSED";
+      return "WINDOW CLOSED · NO MORE ENTRIES";
     case "ORACLE":
-      return lastError === "waiting_reactivity" ? "WAITING FOR RESOLUTION" : "ORACLE ANSWER";
+      if (lastError === "waiting_reactivity") return "SETTLEMENT PROCESSING";
+      if (answered) return "ANSWER RECEIVED";
+      return "WAITING FOR ANSWER";
     case "RESULT":
       return "RESULT";
     case "CLAIM":
       return "CLAIM / REDEEM";
     case "REARM":
-      return "RE-ARMING NEXT WINDOW";
+      return waitingNext ? "NEXT WINDOW" : "RE-ARMING NEXT WINDOW";
     default:
       return phase;
   }
+}
+
+function eventDetail(phase: LapPhase, lastError: string | null): string | undefined {
+  if (phase === "CLOSING") return "NO MORE ENTRIES";
+  if (phase === "ORACLE") {
+    if (lastError === "waiting_reactivity") return "ANSWER RECEIVED · SETTLEMENT PROCESSING";
+    return undefined;
+  }
+  if (lastError === "waiting_book" || lastError === "waiting_next_window") {
+    return "CANDIDATE · NOT THE ACTIVE LAP";
+  }
+  if (!lastError || lastError === "settlement_pending") return undefined;
+  return lastError;
 }
 
 function eventsFromHistory(
@@ -221,7 +241,7 @@ function eventsFromHistory(
   sameLap: boolean,
   now: number,
   lastError: string | null,
-  lastMarketId: string | undefined,
+  answered: boolean,
 ): LapEvent[] {
   const kept = sameLap && prev ? prev.events.filter((e) => history.includes(e.kind as LapPhase)) : [];
   const seen = new Set(kept.map((e) => e.kind));
@@ -232,8 +252,8 @@ function eventsFromHistory(
       id: `ev-${phase}`,
       at: now,
       kind: phase,
-      label: phaseLabel(phase, lastError),
-      detail: lastError ?? lastMarketId,
+      label: phaseLabel(phase, lastError, answered),
+      detail: eventDetail(phase, lastError),
     });
   }
   return [...kept, ...extra];
@@ -381,17 +401,33 @@ export function liveLapFromState(opts: {
   const settlement = opts.proof?.settlements.find((s) => s.lap_index === lapIndex);
   const verifiedFill = Boolean(lastOrder && fillIsVerified(lastOrder.fill_class));
   const side = sideFromKind((lastOrder as { kind?: string | number | null } | undefined)?.kind);
+  const answered = hasOracleAnswer({
+    hist,
+    settlement,
+    lastError: row.last_error,
+  });
+  const histSettled = Boolean(
+    hist &&
+      (hist.state === "SETTLED_WIN" ||
+        hist.state === "SETTLED_LOSS" ||
+        hist.state === "SETTLED_VOID" ||
+        hist.state === "REDEEMING" ||
+        hist.state === "REDEEMED"),
+  );
+  const settled =
+    row.state === "SETTLED_WIN" ||
+    row.state === "SETTLED_LOSS" ||
+    row.state === "SETTLED_VOID" ||
+    row.state === "REDEEMING" ||
+    row.state === "REDEEMED" ||
+    histSettled;
   const phase = deriveVisualPhase({
     backendState: row.state,
     verifiedFill,
     now: opts.now,
     closesAt: market.closesAt,
     lastError: row.last_error,
-    hasOracleAnswer: hasOracleAnswer({
-      hist,
-      settlement,
-      lastError: row.last_error,
-    }),
+    hasOracleAnswer: answered,
     histState: hist?.state,
   });
   const phaseHistory = interpolatePhaseHistory(phase, sameLap ? prevLap?.phaseHistory : undefined, sameLap);
@@ -411,6 +447,38 @@ export function liveLapFromState(opts: {
       ? Number(raw.livePrice)
       : 0;
   const liveUnderlying = fromRow > 0 ? fromRow : liveFeedPrice(opts.markets, market.asset);
+  const settleAt = settlement?.created_at ? Date.parse(settlement.created_at) : Number.NaN;
+  const filledAt = lastOrder?.created_at ? Date.parse(lastOrder.created_at) : Number.NaN;
+  const closed = Number.isFinite(market.closesAt) && market.closesAt > 0 && opts.now >= market.closesAt;
+  const oracleWait = closed
+    ? oracleWaitView({
+        now: opts.now,
+        closesAt: market.closesAt,
+        hasOracleAnswer: answered,
+        lastError: row.last_error,
+        questionId: hist?.oracle_question_id,
+        host: oracleHost(),
+        lastEventAt: Number.isFinite(settleAt) ? settleAt : Number.isFinite(filledAt) ? filledAt : undefined,
+        settled,
+      })
+    : null;
+  const nextWindowRaw = nextEligibleWindow(
+    calendarFromMarkets(opts.markets, opts.now),
+    market.cadence,
+    opts.now,
+  );
+  const nextWindow = nextWindowRaw
+    ? {
+        startsAt: nextWindowRaw.startsAt,
+        remainingMs: nextWindowRaw.remainingMs,
+        cadence: nextWindowRaw.cadence as typeof market.cadence,
+        kind: nextWindowRaw.kind,
+      }
+    : null;
+  const closeToSettle = measuredCloseToSettleMs(
+    market.closesAt,
+    Number.isFinite(settleAt) ? settleAt : null,
+  );
   return {
     number: lapIndex || 1,
     market,
@@ -461,14 +529,14 @@ export function liveLapFromState(opts: {
         : null,
     price: liveUnderlying,
     probUp: fillYes > 0 ? fillYes : Number.NaN,
-    events: eventsFromHistory(
-      phaseHistory,
-      prevLap,
-      sameLap,
-      opts.now,
-      row.last_error,
-      row.last_market_id ?? undefined,
-    ),
+    events: eventsFromHistory(phaseHistory, prevLap, sameLap, opts.now, row.last_error, answered),
+    oracleWait,
+    nextWindow,
+    joinHint: joinHint(market.opensAt, Number.isFinite(filledAt) ? filledAt : null),
+    settlementTiming:
+      closeToSettle != null
+        ? { closeToSettleMs: closeToSettle, settleToRedeemMs: null, redeemToRearmMs: null }
+        : null,
   };
 }
 

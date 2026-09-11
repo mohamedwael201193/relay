@@ -4,6 +4,10 @@ import {
   holdBackendState,
   interpolatePhaseHistory,
   isNewSettledResult,
+  joinHint,
+  measuredCloseToSettleMs,
+  nextEligibleWindow,
+  oracleWaitView,
   remainingMs,
   settleHoldLapIndex,
   windowBounds,
@@ -39,7 +43,7 @@ describe("interpolatePhaseHistory", () => {
 });
 
 describe("deriveVisualPhase", () => {
-  it("stays HOLD before close and becomes CLOSING after", () => {
+  it("stays HOLD before close and becomes ORACLE after, interpolating CLOSE in history", () => {
     const closesAt = 1_000_000;
     expect(
       deriveVisualPhase({
@@ -60,7 +64,7 @@ describe("deriveVisualPhase", () => {
         lastError: "settlement_pending",
         hasOracleAnswer: false,
       }),
-    ).toBe("CLOSING");
+    ).toBe("ORACLE");
     expect(
       deriveVisualPhase({
         backendState: "WAITING_SETTLEMENT",
@@ -132,5 +136,58 @@ describe("holdBackendState", () => {
     expect(holdBackendState("REDEEMED", true)).toBe("REARMING");
     expect(holdBackendState("REDEEMING", true)).toBe("REDEEMING");
     expect(holdBackendState("SETTLED_LOSS", false)).toBe("SETTLED_LOSS");
+  });
+});
+
+describe("oracleWaitView", () => {
+  it("marks DELAYED after 30s without an answer and never calls that FAILED", () => {
+    const closesAt = 1_000_000;
+    const waiting = oracleWaitView({
+      now: closesAt + 3_000,
+      closesAt,
+      hasOracleAnswer: false,
+      lastError: "settlement_pending",
+      questionId: "53984",
+      host: "dev.oracle.somnia.host",
+    });
+    expect(waiting.status).toBe("waiting_answer");
+    expect(waiting.delayed).toBe(false);
+    expect(waiting.closedAgoMs).toBe(3_000);
+    const delayed = oracleWaitView({
+      now: closesAt + 42_000,
+      closesAt,
+      hasOracleAnswer: false,
+      lastError: "settlement_pending",
+      questionId: "53984",
+      host: "dev.oracle.somnia.host",
+    });
+    expect(delayed.delayed).toBe(true);
+    expect(delayed.status).toBe("waiting_answer");
+  });
+});
+
+describe("nextEligibleWindow", () => {
+  it("waits for the next open instead of joining a 15m already 7 minutes in", () => {
+    const now = 1_000_000;
+    const hint = nextEligibleWindow(
+      [
+        { opensAt: now - 450_000, closesAt: now + 450_000, cadence: "15m" },
+        { opensAt: now + 450_000, closesAt: now + 1_350_000, cadence: "15m" },
+      ],
+      "15m",
+      now,
+    );
+    expect(hint?.kind).toBe("opens");
+    expect(hint?.startsAt).toBe(now + 450_000);
+    expect(hint?.remainingMs).toBe(450_000);
+  });
+});
+
+describe("joinHint / measuredCloseToSettleMs", () => {
+  it("only surfaces JOINED AT when fill is after open, and never reports 0ms as a measured settle", () => {
+    expect(joinHint(1_000, 1_005)).toBeNull();
+    expect(joinHint(1_000, 20_000)?.joinedAt).toBe(20_000);
+    expect(measuredCloseToSettleMs(1_000, null)).toBeNull();
+    expect(measuredCloseToSettleMs(1_000, 4_000)).toBe(3_000);
   });
 });

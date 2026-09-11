@@ -134,7 +134,7 @@ export function deriveVisualPhase(opts: {
   hasOracleAnswer: boolean;
   histState?: string | null;
 }): LapPhase {
-  const { backendState, verifiedFill, now, closesAt, lastError, hasOracleAnswer, histState } = opts;
+  const { backendState, verifiedFill, now, closesAt, histState } = opts;
   const mapped = mapBackendState(backendState);
   const closed = Number.isFinite(closesAt) && closesAt > 0 && now >= closesAt;
 
@@ -145,8 +145,7 @@ export function deriveVisualPhase(opts: {
   }
   if (backendState === "WAITING_SETTLEMENT" || (backendState === "FILLED" && verifiedFill && closed)) {
     if (!closed) return "HOLD";
-    if (hasOracleAnswer || lastError === "waiting_reactivity") return "ORACLE";
-    return "CLOSING";
+    return "ORACLE";
   }
   if (backendState === "SETTLED_WIN" || backendState === "SETTLED_LOSS" || backendState === "SETTLED_VOID") {
     return "RESULT";
@@ -176,4 +175,84 @@ export function hasOracleAnswer(opts: {
 
 export function isInFlightState(state: string): boolean {
   return IN_FLIGHT_STATES.has(state);
+}
+
+export const ORACLE_DELAYED_AFTER_MS = 30_000;
+export const FRESH_WINDOW_FRAC = 0.85;
+const JOIN_HINT_AFTER_MS = 15_000;
+
+export type OracleWaitStatus = "waiting_answer" | "answer_received" | "settling" | "resolved";
+
+export function oracleWaitView(opts: {
+  now: number;
+  closesAt: number;
+  hasOracleAnswer: boolean;
+  lastError: string | null;
+  questionId?: string | null;
+  host: string;
+  lastEventAt?: number;
+  settled?: boolean;
+}): {
+  status: OracleWaitStatus;
+  delayed: boolean;
+  questionId: string | null;
+  host: string;
+  closedAgoMs: number;
+  expectedAt: number;
+  lastEventAt: number;
+} {
+  const closedAgoMs = Math.max(0, opts.now - opts.closesAt);
+  let status: OracleWaitStatus = "waiting_answer";
+  if (opts.settled) status = "resolved";
+  else if (opts.lastError === "waiting_reactivity") status = "settling";
+  else if (opts.hasOracleAnswer) status = "answer_received";
+  return {
+    status,
+    delayed: status === "waiting_answer" && closedAgoMs >= ORACLE_DELAYED_AFTER_MS,
+    questionId: opts.questionId && opts.questionId !== "0" ? opts.questionId : null,
+    host: opts.host,
+    closedAgoMs,
+    expectedAt: opts.closesAt,
+    lastEventAt: opts.lastEventAt && opts.lastEventAt > 0 ? opts.lastEventAt : opts.closesAt,
+  };
+}
+
+export function nextEligibleWindow(
+  windows: ReadonlyArray<{ opensAt: number; closesAt: number; cadence: string }>,
+  cadence: string,
+  now: number,
+  freshFrac = FRESH_WINDOW_FRAC,
+): { startsAt: number; remainingMs: number; cadence: string; kind: "opens" | "after_current" | "joinable" } | null {
+  const same = windows.filter((w) => w.cadence === cadence && Number.isFinite(w.closesAt) && w.closesAt > now);
+  if (!same.length) return null;
+  const future = [...same].filter((w) => w.opensAt > now).sort((a, b) => a.opensAt - b.opensAt)[0];
+  if (future) {
+    return { startsAt: future.opensAt, remainingMs: future.opensAt - now, cadence, kind: "opens" };
+  }
+  const joinable = [...same]
+    .filter((w) => {
+      const total = w.closesAt - w.opensAt;
+      return total > 0 && w.closesAt - now >= total * freshFrac;
+    })
+    .sort((a, b) => a.closesAt - b.closesAt)[0];
+  if (joinable) {
+    return { startsAt: joinable.opensAt, remainingMs: 0, cadence, kind: "joinable" };
+  }
+  const current = [...same].sort((a, b) => a.closesAt - b.closesAt)[0];
+  if (!current) return null;
+  return { startsAt: current.closesAt, remainingMs: current.closesAt - now, cadence, kind: "after_current" };
+}
+
+export function joinHint(opensAt: number, filledAt: number | null | undefined): { joinedAt: number } | null {
+  if (!filledAt || !Number.isFinite(filledAt) || filledAt <= 0) return null;
+  if (filledAt <= opensAt + JOIN_HINT_AFTER_MS) return null;
+  return { joinedAt: filledAt };
+}
+
+export function measuredCloseToSettleMs(closeAt: number, settledAt: number | null | undefined): number | null {
+  if (!Number.isFinite(closeAt) || closeAt <= 0) return null;
+  if (!settledAt || !Number.isFinite(settledAt) || settledAt <= 0) return null;
+  const ms = settledAt - closeAt;
+  if (ms < 0) return null;
+  return ms;
 }

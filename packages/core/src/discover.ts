@@ -109,12 +109,49 @@ async function probeOne(
   };
 }
 
-function rank(a: LivePick, b: LivePick): number {
-  const ia = Number(a.intervalSec ?? 1e12);
-  const ib = Number(b.intervalSec ?? 1e12);
-  if (ia !== ib) return ia - ib;
-  if (a.expireNs < b.expireNs) return -1;
-  if (a.expireNs > b.expireNs) return 1;
+/** Headroom: refuse entry after 60% of the window (need ≥40% remaining). */
+export const HEADROOM_REMAINING_FRAC = 0.4;
+/** Prefer a window that has not yet aged past ~15% elapsed (or has not opened). */
+export const FRESH_WINDOW_FRAC = 0.85;
+
+export function remainingSecFromExpire(expireNs: bigint, now: bigint): number {
+  if (expireNs <= now) return 0;
+  return Number((expireNs - now) / 1_000_000_000n);
+}
+
+export function isFreshWindow(
+  remainingSec: number,
+  intervalSec: number,
+  frac = FRESH_WINDOW_FRAC,
+): boolean {
+  if (!(intervalSec > 0) || !(remainingSec > 0)) return false;
+  return remainingSec >= intervalSec * frac;
+}
+
+/**
+ * Fresh windows first (a 15m that just opened, not the one already 7m in).
+ * Among fresh: soonest expiry. Among leftovers: most remaining — never the dying book.
+ */
+export function rankLivePicks(
+  a: { expireNs: bigint; intervalSec?: string },
+  b: { expireNs: bigint; intervalSec?: string },
+  now: bigint,
+): number {
+  const ia = Number(a.intervalSec ?? 0);
+  const ib = Number(b.intervalSec ?? 0);
+  if (ia !== ib && ia > 0 && ib > 0) return ia - ib;
+  const ra = remainingSecFromExpire(a.expireNs, now);
+  const rb = remainingSecFromExpire(b.expireNs, now);
+  const fa = isFreshWindow(ra, ia);
+  const fb = isFreshWindow(rb, ib);
+  if (fa !== fb) return fa ? -1 : 1;
+  if (fa && fb) {
+    if (a.expireNs < b.expireNs) return -1;
+    if (a.expireNs > b.expireNs) return 1;
+    return 0;
+  }
+  if (a.expireNs > b.expireNs) return -1;
+  if (a.expireNs < b.expireNs) return 1;
   return 0;
 }
 
@@ -128,6 +165,8 @@ export async function discoverLiveMarket(opts: {
   maxExpiryHorizonSec?: number;
   /** Skip windows with less than this fraction of interval remaining (concept headroom). */
   minRemainingFrac?: number;
+  /** When set, skip in-progress windows below this remaining fraction (wait for the next open). */
+  preferFreshFrac?: number;
   /** When non-empty, skip markets whose asset is not in the list. */
   assets?: string[];
 } = {}): Promise<LivePick | null> {
@@ -154,18 +193,21 @@ export async function discoverLiveMarket(opts: {
       try {
         const pick = await probeOne(exchange, client, m, { requireAsks, requireNoAsks, skip });
         if (!pick) continue;
-        const remainingSec = Number((pick.expireNs - nowNs()) / 1_000_000_000n);
+        const remainingSec = remainingSecFromExpire(pick.expireNs, nowNs());
         if (opts.maxExpiryHorizonSec != null && remainingSec > opts.maxExpiryHorizonSec) continue;
         const interval = Number(pick.intervalSec ?? 0);
         if (opts.minRemainingFrac != null && interval > 0) {
           if (remainingSec < interval * opts.minRemainingFrac) continue;
+        }
+        if (opts.preferFreshFrac != null && interval > 0) {
+          if (!isFreshWindow(remainingSec, interval, opts.preferFreshFrac)) continue;
         }
         found.push(pick);
       } catch {
         /* skip broken row */
       }
     }
-    found.sort(rank);
+    found.sort((a, b) => rankLivePicks(a, b, nowNs()));
     if (found[0]) return found[0];
     if (Date.now() + pollMs > deadline) break;
     await sleep(pollMs);

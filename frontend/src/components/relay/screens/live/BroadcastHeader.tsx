@@ -11,6 +11,7 @@ import { useRelay } from "@/lib/relay/engine/store";
 import { LiveDot, PhaseStepper } from "@/components/relay/core/primitives";
 import { AssetIcon } from "@/components/relay/identity/identity";
 import { cn } from "@/lib/utils";
+import { countdown, hhmm } from "@/lib/relay/format";
 import { useCloseCountdown } from "@/lib/relay/live/useCloseCountdown";
 import { WindowTrack } from "./WindowTrack";
 
@@ -24,6 +25,17 @@ export function BroadcastHeader({ className }: { className?: string }) {
   const windowTotalMs = Math.max(1, market.closesAt - market.opensAt);
   const windowElapsedMs = Math.max(0, Math.min(windowTotalMs, now - market.opensAt));
   const label = clock.closed ? "CLOSED" : clock.label;
+  const caption = clock.closed
+    ? phase === "ORACLE" && lap.oracleWait?.delayed
+      ? "RESOLUTION DELAYED"
+      : phase === "ORACLE"
+        ? "WAITING FOR ORACLE"
+        : phase === "REARM"
+          ? "NEXT WINDOW"
+          : "CLOSED"
+    : lap.joinHint
+      ? "LIVE WINDOW"
+      : "TO SETTLEMENT";
 
   /* countdown voice: lime cruising · flame closing · ember pulse in the last 10s */
   const color = clock.closed
@@ -53,11 +65,14 @@ export function BroadcastHeader({ className }: { className?: string }) {
             <span className="mlabel px-1.5 py-0.5 rounded-md border border-lined text-flame">
               {market.cadence.toUpperCase()}
             </span>
+            {lap.joinHint && !clock.closed ? (
+              <span className="mlabel text-foam/70">JOINED AT {hhmm(lap.joinHint.joinedAt)}</span>
+            ) : null}
           </div>
         </div>
 
         <div className="text-right shrink-0 ml-auto">
-          <div className="mlabel text-foam/70 mb-1 hidden sm:block">TO SETTLEMENT</div>
+          <div className="mlabel text-foam/70 mb-1 hidden sm:block">{caption}</div>
           <div
             className={cn("data font-semibold text-5xl sm:text-6xl leading-none", pulse && "animate-pulse")}
             style={{ color }}
@@ -66,6 +81,9 @@ export function BroadcastHeader({ className }: { className?: string }) {
           >
             {label}
           </div>
+          {clock.closed && lap.nextWindow && phase === "REARM" && lap.nextWindow.kind !== "joinable" ? (
+            <div className="mlabel text-foam/70 mt-1">STARTS IN {countdown(Math.max(0, lap.nextWindow.startsAt - now))}</div>
+          ) : null}
         </div>
       </div>
 

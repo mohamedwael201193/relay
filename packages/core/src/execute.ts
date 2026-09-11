@@ -141,6 +141,7 @@ export async function runLiveOrder(
     vault?: Address;
     targetStakeRaw?: bigint;
     minRemainingFrac?: number;
+    preferFreshFrac?: number;
     bias?: RunnerBias;
     kind?: number;
     assets?: string[];
@@ -165,6 +166,7 @@ export async function runLiveOrder(
     skipMarketIds: opts.skipMarketIds,
     maxExpiryHorizonSec: opts.maxExpiryHorizonSec,
     minRemainingFrac: opts.minRemainingFrac,
+    preferFreshFrac: opts.preferFreshFrac,
     assets: opts.assets,
   };
   let chosen = await discoverLiveMarket({
