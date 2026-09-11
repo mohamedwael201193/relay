@@ -598,7 +598,7 @@ export function lapsFromHistory(
         fillTx: order.tx_hash,
         settlementTx: settle?.redeem_tx ?? "",
         claimTx: settle?.redeem_tx ?? "",
-        oracleQuestionId: h.oracle_question_id || mkt?.oracleQuestionId || "",
+        oracleQuestionId: h.oracle_question_id || "",
         status: settle?.redeem_tx ? "VERIFIED" : settle ? "PENDING" : "PENDING",
         sealedAt,
       },

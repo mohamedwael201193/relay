@@ -151,6 +151,70 @@ describe("lapsFromHistory", () => {
     expect(laps[0].proof.oracleQuestionId).toBe("17539064");
   });
 
+  it("keeps each lap's oracle question even when two laps recycled the same pool", () => {
+    const sharedPool = "0x96b8f8Cfc61683a71D3a7B2703F61cB357ea033b";
+    const two: HistoryLap[] = [
+      {
+        ...history[0],
+        id: "7",
+        lap_index: 7,
+        market_id: "0x0000000000000000000000000000000000000000000000000000000000019bf2",
+        pool: sharedPool,
+        state: "REDEEMED",
+        asset: "ETH",
+        interval_sec: "900",
+        oracle_question_id: "53883",
+        pnl: "1004394",
+      },
+      {
+        ...history[0],
+        id: "11",
+        lap_index: 11,
+        market_id: "0x0000000000000000000000000000000000000000000000000000000000019cd2",
+        pool: sharedPool,
+        state: "SETTLED_LOSS",
+        asset: "BTC",
+        interval_sec: "900",
+        oracle_question_id: "53921",
+        pnl: "-3860567",
+      },
+    ];
+    const twoProof: ProofBundle = {
+      orders: [
+        { ...proof.orders[0]!, lap_index: 7, market_id: two[0]!.market_id, tx_hash: "0xf7" },
+        { ...proof.orders[0]!, lap_index: 11, market_id: two[1]!.market_id, tx_hash: "0xf11" },
+      ],
+      settlements: [
+        {
+          market_id: two[0]!.market_id,
+          resolved: true,
+          voided: false,
+          redeem_tx: "0xs7",
+          created_at: "2026-09-11T03:32:00.000Z",
+          lap_index: 7,
+        },
+        {
+          market_id: two[1]!.market_id,
+          resolved: true,
+          voided: false,
+          redeem_tx: "0xs11",
+          created_at: "2026-09-11T04:46:00.000Z",
+          lap_index: 11,
+        },
+      ],
+      records: [],
+    };
+    const laps = lapsFromHistory(two, twoProof, [
+      { marketId: two[1]!.market_id, asset: "BTC", intervalSec: "900", oracleQuestionId: "53921", onchainStatus: "Resolved", pool: sharedPool },
+    ]);
+    expect(laps[0].proof.oracleQuestionId).toBe("53883");
+    expect(laps[0].market.asset).toBe("ETH");
+    expect(laps[1].proof.oracleQuestionId).toBe("53921");
+    expect(laps[1].market.asset).toBe("BTC");
+    expect(laps[0].market.cadence).toBe("15m");
+    expect(laps[1].market.cadence).toBe("15m");
+  });
+
   it("maps REDEEMED to WIN with source-backed PnL instead of treating the lap as OPEN", () => {
     const redeemed: HistoryLap[] = [
       {

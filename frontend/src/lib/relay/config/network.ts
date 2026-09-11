@@ -56,10 +56,11 @@ export function explorerTxUrl(hash: string | undefined | null): string | null {
   return `${SHANNON_PUBLIC.explorer}/tx/${hash}`;
 }
 
-/** Official Somnia oracle graph for a decimal question id. Never invent a placeholder. */
-export function oracleQuestionUrl(id: string | undefined | null): string | null {
+/** Official Somnia oracle graph for this chain's question id. Shannon ids collide on prd.oracle. */
+export function oracleQuestionUrl(id: string | undefined | null, chainId = publicEnv().chainId): string | null {
   if (!id || id === "0") return null;
-  return `https://prd.oracle.somnia.host/questions/${id}?view=graph`;
+  const host = chainId === SHANNON_CHAIN_ID ? "dev.oracle.somnia.host" : "prd.oracle.somnia.host";
+  return `https://${host}/questions/${id}?view=graph`;
 }
 
 export function publicEnv() {

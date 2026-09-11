@@ -34,7 +34,7 @@ export async function marketBoundaryPrices(
   };
 }
 
-/** Opening/close USD plus the on-chain OracleHub question id (decimal, for prd.oracle.somnia.host). */
+/** Opening/close USD plus the on-chain OracleHub question id (Shannon → dev.oracle.somnia.host). */
 export async function marketOracleMeta(marketId: string): Promise<{
   open: number | null;
   close: number | null;

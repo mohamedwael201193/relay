@@ -7,6 +7,7 @@ import { createExchange } from "./exchange.js";
 import { envString, loadEnv } from "./env.js";
 import { getBinaryBookParamsHttp, getMarketOnchainHttp } from "./onchain.js";
 import { shannonClient } from "./rpc.js";
+import { canonicalOracleQuestionId } from "./marketIdentity.js";
 import { humanFeedPrice, scaleOracleNumeric } from "./oraclePrice.js";
 
 export type HarnessRow = {
@@ -119,7 +120,7 @@ async function probeMarket(opts: {
       closePrice: scaleOracleNumeric(opts.resolution[id] ?? opts.resolution[marketId]),
       livePrice: opts.feedPrice[asset],
       priceHistory: opts.feedHistory[asset],
-      oracleQuestionId: indexedQ ?? onchainQ,
+      oracleQuestionId: canonicalOracleQuestionId(onchainQ, indexedQ),
     };
   } catch {
     return null;

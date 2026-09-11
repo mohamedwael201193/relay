@@ -46,6 +46,7 @@ export {
   type RenderOwner,
   type EnsureResult,
 } from "./renderDeploy.js";
+export { canonicalOracleQuestionId, oracleQuestionUrl, settlementOracleQuestionId } from "./marketIdentity.js";
 export { runReactivityProbe } from "./reactivityProbe.js";
 export { runGoldE2e } from "./goldE2e.js";
 export { settleFilledMarket, settleFilledMarketFromKey } from "./settle.js";

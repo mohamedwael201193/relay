@@ -4,6 +4,7 @@ import { SHANNON_ADDRESSES, requiredAddress } from "./addresses.js";
 import { getMarketOnchainHttp } from "./onchain.js";
 import { sendHttp, shannonHttpClient } from "./sendHttp.js";
 import { erc20Balance } from "./rpc.js";
+import { settlementOracleQuestionId } from "./marketIdentity.js";
 import { voidExpiredIsCallable, shouldWaitForReactivity } from "./settleGate.js";
 import { loadShannonDeployment, readReactivityGate, writeEvidence } from "./vaultOps.js";
 
@@ -62,18 +63,24 @@ export async function settleFilledMarket(
   const txs: SettleTx[] = [];
 
   if (!before.isResolved && !before.isVoided) {
-    await trySend(
-      account,
-      "pokeOracle",
-      encodeFunctionData({
-        abi: moduleAbi,
-        functionName: "pokeOracle",
-        args: [before.oracleQuestionId],
-      }),
-      MODULE,
-      10_000_000n,
-      txs,
-    );
+    const bound = settlementOracleQuestionId({
+      marketId,
+      onchainQuestionId: before.oracleQuestionId,
+    });
+    if (bound.questionId) {
+      await trySend(
+        account,
+        "pokeOracle",
+        encodeFunctionData({
+          abi: moduleAbi,
+          functionName: "pokeOracle",
+          args: [BigInt(bound.questionId)],
+        }),
+        MODULE,
+        10_000_000n,
+        txs,
+      );
+    }
     await trySend(
       account,
       "syncSettlement",
