@@ -73,6 +73,20 @@ describe("pickOwnedVault", () => {
     ).toBe(parent);
   });
 
+  it("keeps the hinted parent through DISCOVERING re-arm even if a child lap is in flight", () => {
+    const parent = "0xca3972699b1776b78557aa3b561d3be4c764702a";
+    const child = "0xead6aee211048699a74b7a16c917634842a7b6b7";
+    expect(
+      pickOwnedVault(
+        [
+          { vault: child, state: "WAITING_SETTLEMENT", lap_index: 3 },
+          { vault: parent, state: "DISCOVERING", lap_index: 12 },
+        ],
+        parent,
+      ),
+    ).toBe(parent);
+  });
+
   it("keeps the hinted in-flight vault even if a sibling has a higher lap index", () => {
     const parent = "0xca3972699b1776b78557aa3b561d3be4c764702a";
     const child = "0xead6aee211048699a74b7a16c917634842a7b6b7";

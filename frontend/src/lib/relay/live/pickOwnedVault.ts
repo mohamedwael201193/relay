@@ -10,14 +10,19 @@ function holdScore(r: ListedRunner): number {
   return Number(r.lap_index) || 0;
 }
 
+/** Brand-new vault (no laps yet). Must not steal Live from a sibling still in a lap. */
+function isUnarmedBaby(r: ListedRunner): boolean {
+  return (r.state === "ACTIVE" || r.state === "DISCOVERING") && !(holdScore(r) > 0);
+}
+
 /**
  * Resolve the vault this owner may act on.
  * Never fall back to a leftover store address — that would show Wallet B's
  * runner (or the ops vault) when Wallet C has none.
- * A brand-new child (ACTIVE / DISCOVERING) must not steal the bound
- * Live Lap from a sibling still in WAITING_SETTLEMENT / REDEEM / RE-ARM.
- * When two vaults are both in-flight and there is no hint, prefer the
- * higher lap_index (the parent that has been running).
+ * A brand-new child (ACTIVE / DISCOVERING, lap 0) must not steal Live from a
+ * sibling still in WAITING_SETTLEMENT / REDEEM / RE-ARM.
+ * A hinted parent that is DISCOVERING/ACTIVE with lap_index > 0 is still that
+ * runner — do not jump to another in-flight child during RE-ARM.
  */
 export function pickOwnedVault(
   listed: ListedRunner[],
@@ -27,17 +32,18 @@ export function pickOwnedVault(
   const byVault = new Map(rows.map((r) => [r.vault.toLowerCase(), r]));
   const hinted = vaultHint?.toLowerCase() ?? null;
   const holdRows = rows.filter((r) => HOLD_PICK.has(r.state));
-  if (hinted && HOLD_PICK.has(byVault.get(hinted)?.state ?? "")) {
-    return hinted;
-  }
-  if (holdRows.length) {
-    const best = [...holdRows].sort((a, b) => holdScore(b) - holdScore(a))[0];
-    return best!.vault.toLowerCase();
-  }
+  const bestHold = holdRows.length
+    ? [...holdRows].sort((a, b) => holdScore(b) - holdScore(a))[0]
+    : undefined;
   if (hinted) {
     const hit = byVault.get(hinted);
+    if (hit && !DEAD_STATES.has(hit.state) && !isUnarmedBaby(hit)) return hinted;
+    if (hit && isUnarmedBaby(hit) && bestHold && bestHold.vault.toLowerCase() !== hinted) {
+      return bestHold.vault.toLowerCase();
+    }
     if (hit && !DEAD_STATES.has(hit.state)) return hinted;
   }
+  if (bestHold) return bestHold.vault.toLowerCase();
   const live =
     rows.find((r) => !DEAD_STATES.has(r.state)) ?? rows.find((r) => r.state !== "KILLED");
   if (live) return live.vault.toLowerCase();
