@@ -54,6 +54,8 @@ export {
   settleFilledMarketFromKey,
   settlementProofHash,
   readLapSettledProofTx,
+  proofTxFromAddressLogs,
+  LAP_SETTLED_TOPIC0,
 } from "./settle.js";
 export {
   filledOrderNeedsSettle,

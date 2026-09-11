@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { settlementProofHash } from "./settle.js";
+import { LAP_SETTLED_TOPIC0, proofTxFromAddressLogs, settlementProofHash } from "./settle.js";
 
 const HASH = `0x${"11".repeat(32)}`;
 const HASH2 = `0x${"22".repeat(32)}`;
@@ -28,5 +28,28 @@ describe("settlementProofHash", () => {
         pokeAndSyncTxs: [{ hash: "skipped_reactivity" }],
       }),
     ).toBeNull();
+  });
+});
+
+describe("proofTxFromAddressLogs", () => {
+  const market = "0x0000000000000000000000000000000000000000000000000000000000019dbe";
+  const other = "0x0000000000000000000000000000000000000000000000000000000000019d64";
+  const hash = `0x${"7f".repeat(32)}`;
+
+  it("picks LapSettled for the market and ignores other topics", () => {
+    expect(
+      proofTxFromAddressLogs(
+        [
+          { topics: [`0x${"aa".repeat(32)}`, market], transaction_hash: `0x${"11".repeat(32)}` },
+          { topics: [LAP_SETTLED_TOPIC0, other], transaction_hash: `0x${"22".repeat(32)}` },
+          { topics: [LAP_SETTLED_TOPIC0, market], transaction_hash: hash },
+        ],
+        market,
+      ),
+    ).toBe(hash);
+  });
+
+  it("does not invent a hash when LapSettled is missing", () => {
+    expect(proofTxFromAddressLogs([{ topics: [LAP_SETTLED_TOPIC0, other], transaction_hash: hash }], market)).toBeNull();
   });
 });

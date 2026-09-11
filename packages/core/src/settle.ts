@@ -7,6 +7,7 @@ import { erc20Balance } from "./rpc.js";
 import { settlementOracleQuestionId } from "./marketIdentity.js";
 import { voidExpiredIsCallable, shouldWaitForReactivity } from "./settleGate.js";
 import { loadShannonDeployment, readReactivityGate, writeEvidence } from "./vaultOps.js";
+import { envString } from "./env.js";
 
 const MODULE = requiredAddress(SHANNON_ADDRESSES.binaryModule, "binaryModule");
 const COLLATERAL = requiredAddress(SHANNON_ADDRESSES.collateral, "collateral");
@@ -36,9 +37,36 @@ type SettleTx = { name: string; hash: string; status: string };
 
 const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
 
+/** RunnerVault.LapSettled topic0 — Shannon explorer fallback when eth_getLogs 400s. */
+export const LAP_SETTLED_TOPIC0 =
+  "0xbed12f4c253de1327c57286c4a35a524837d9f2605e4f5c69f458eeeda119e32" as Hex;
+
+const DEFAULT_SHANNON_EXPLORER = "https://shannon-explorer.somnia.network";
+
 const lapSettledEvent = parseAbiItem(
   "event LapSettled(bytes32 indexed marketId, uint256 questionId, bool voided, uint8 winningOutcome, bool fromCallback)",
 );
+
+type AddressLogItem = {
+  topics?: string[] | null;
+  transaction_hash?: string | null;
+};
+
+export function proofTxFromAddressLogs(
+  items: AddressLogItem[] | null | undefined,
+  marketId: string,
+): Hex | null {
+  const market = marketId.toLowerCase();
+  const topic0 = LAP_SETTLED_TOPIC0.toLowerCase();
+  for (const item of items ?? []) {
+    const topics = (item.topics ?? []).map((t) => t.toLowerCase());
+    if (topics[0] !== topic0) continue;
+    if (topics[1] !== market) continue;
+    const hash = item.transaction_hash;
+    if (hash && TX_HASH.test(hash)) return hash as Hex;
+  }
+  return null;
+}
 
 /** Chain tx that proves settle/claim. Losses often skip redeemPosition (0 payout). */
 export function settlementProofHash(opts: {
@@ -54,6 +82,30 @@ export function settlementProofHash(opts: {
     [...(opts.pokeAndSyncTxs ?? [])].reverse().map((t) => hex(t.hash)).find(Boolean) ??
     null
   );
+}
+
+async function readLapSettledFromExplorer(vault: Address, marketId: Hex): Promise<Hex | null> {
+  const base = (envString("SHANNON_EXPLORER_URL", DEFAULT_SHANNON_EXPLORER) ?? DEFAULT_SHANNON_EXPLORER).replace(
+    /\/$/,
+    "",
+  );
+  let url = `${base}/api/v2/addresses/${vault}/logs`;
+  for (let page = 0; page < 8; page++) {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      items?: AddressLogItem[];
+      next_page_params?: Record<string, string | number> | null;
+    };
+    const hit = proofTxFromAddressLogs(body.items, marketId);
+    if (hit) return hit;
+    const next = body.next_page_params;
+    if (!next) return null;
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(next)) q.set(k, String(v));
+    url = `${base}/api/v2/addresses/${vault}/logs?${q}`;
+  }
+  return null;
 }
 
 /** Read-only: LapSettled tx for a market. Used to backfill 0-payout losses that skipped redeem. */
@@ -75,7 +127,12 @@ export async function readLapSettledProofTx(
     });
     const hit = logs.find((l) => Boolean(l.args.fromCallback)) ?? logs.at(-1);
     const hash = hit?.transactionHash;
-    return hash && TX_HASH.test(hash) ? hash : null;
+    if (hash && TX_HASH.test(hash)) return hash;
+  } catch {
+    /* Shannon public RPC often rejects eth_getLogs; explorer is chain-indexed. */
+  }
+  try {
+    return await readLapSettledFromExplorer(vault, marketId);
   } catch {
     return null;
   }
